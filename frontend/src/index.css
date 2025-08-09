@@ -1,50 +1,9 @@
-/* Append these styles to frontend/src/index.css */
-
-hr {
-  border: none;
-  border-top: 1px solid #eee;
-  margin: 40px 0;
-}
-
-.scheduled-messages-container {
-  margin-top: 20px;
-  text-align: left;
-}
-
-.scheduled-messages-list {
-  list-style: none;
-  padding: 0;
-}
-
-.scheduled-message-item {
-  background-color: #f9f9f9;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  padding: 15px;
-  margin-bottom: 10px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.message-details blockquote {
-  margin: 10px 0 0 0;
-  padding-left: 10px;
-  border-left: 3px solid #ccc;
-  font-style: italic;
-  color: #555;
-}
-
-.cancel-button {
-  background-color: #e01e5a; /* Slack red */
-  color: white;
-  border: none;
-  padding: 8px 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.cancel-button:hover {
-  background-color: #c71a50;
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+  'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+  sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f4f5f7; /* A light grey background */
 }

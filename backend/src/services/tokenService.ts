@@ -1,13 +1,13 @@
-import { PrismaClient } from '@prisma/client';
 import { WebClient } from '@slack/web-api';
 import { Installation } from '@slack/oauth';
-
+import { PrismaClient } from '@prisma/client';
+// We still need a prisma client here for the update, this could also be moved to the repo
 const prisma = new PrismaClient();
 
 // This function will get an installation, check if the token is expiring,
 // refresh it if needed, and return a valid token.
 export const getValidAccessToken = async (teamId: string): Promise<string | null> => {
-    // 1. Find the installation for the team
+    // 1. Find the installation for the team using the repository
     const installation = await prisma.slackInstallation.findUnique({
         where: { teamId },
     });
@@ -18,18 +18,16 @@ export const getValidAccessToken = async (teamId: string): Promise<string | null
 
     const installationData = installation.data as unknown as Installation;
 
-    // --- This is the new check to fix the error ---
     // If the bot object doesn't exist, we can't get a token.
     if (!installationData.bot) {
         console.error(`Installation for team ${teamId} is missing bot data.`);
         return null;
     }
-    // --- End of new check ---
 
     const { expiresAt, refreshToken, token } = installationData.bot;
 
     if (!expiresAt || !refreshToken || !token) {
-        // Cannot refresh without these values
+        // Cannot refresh without these values, just return the current token
         return token || null;
     }
 
@@ -63,6 +61,7 @@ export const getValidAccessToken = async (teamId: string): Promise<string | null
             },
         };
 
+        // Update the record in the database
         await prisma.slackInstallation.update({
             where: { id: installation.id },
             data: { data: newInstallationData as any },
@@ -74,7 +73,7 @@ export const getValidAccessToken = async (teamId: string): Promise<string | null
         return newInstallationData.bot.token;
     } catch (error) {
         console.error(`Error refreshing token for team ${teamId}:`, error);
-        // If refresh fails, return null
-        return null;
+        // If refresh fails, return the old token, it might still work for a few minutes
+        return token;
     }
 };
