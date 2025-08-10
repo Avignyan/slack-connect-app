@@ -5,8 +5,6 @@ import { findAndMarkDueMessages, updateMessageStatus } from '../repositories/mes
 
 const sendDueMessages = async () => {
     console.log('Scheduler: Checking for due messages...');
-
-    // 1. Get due messages from the repository. The repo handles the complex query.
     const dueMessages = await findAndMarkDueMessages();
 
     if (dueMessages.length > 0) {
@@ -16,11 +14,21 @@ const sendDueMessages = async () => {
     for (const msg of dueMessages) {
         try {
             const installationData = msg.installation.data as unknown as Installation;
-            const token = installationData.bot?.token;
+            let token;
+
+            // --- This is the new logic ---
+            if (msg.sendAsUser) {
+                token = installationData.user?.token;
+                console.log(`Scheduler: Sending message ID ${msg.id} as user.`);
+            } else {
+                token = installationData.bot?.token;
+                console.log(`Scheduler: Sending message ID ${msg.id} as bot.`);
+            }
 
             if (!token) {
-                throw new Error(`No token for team ${msg.installation.teamId}`);
+                throw new Error(`Could not find a valid token for message ID ${msg.id}`);
             }
+            // --- End of new logic ---
 
             const client = new WebClient(token);
             await client.chat.postMessage({
@@ -28,13 +36,11 @@ const sendDueMessages = async () => {
                 text: msg.message,
             });
 
-            // 2. Tell the repository to update the status to SENT
             await updateMessageStatus(msg.id, 'SENT');
             console.log(`Scheduler: Successfully sent message ID ${msg.id}`);
 
         } catch (error) {
             console.error(`Scheduler: Failed to send message ID ${msg.id}:`, error);
-            // 3. Tell the repository to update the status to FAILED
             await updateMessageStatus(msg.id, 'FAILED');
         }
     }

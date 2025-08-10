@@ -5,7 +5,9 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch --require dotenv/config src/index.ts"
+    "dev": "tsx watch --require dotenv/config src/index.ts",
+    "lint": "tsc --noEmit",
+    "build": "tsc"
   },
   "keywords": [],
   "author": "",

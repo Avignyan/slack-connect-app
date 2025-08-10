@@ -25,6 +25,7 @@ model ScheduledMessage {
   createdAt      DateTime          @default(now())
   installationId String
   installation   SlackInstallation @relation(fields: [installationId], references: [id])
+  sendAsUser     Boolean           @default(false) // <-- Add this line
 }
 
 // --- Add this new model ---

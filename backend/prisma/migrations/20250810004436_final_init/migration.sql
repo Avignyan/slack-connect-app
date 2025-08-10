@@ -14,6 +14,7 @@ CREATE TABLE "ScheduledMessage" (
     "status" TEXT NOT NULL DEFAULT 'PENDING',
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "installationId" TEXT NOT NULL,
+    "sendAsUser" BOOLEAN NOT NULL DEFAULT false,
     CONSTRAINT "ScheduledMessage_installationId_fkey" FOREIGN KEY ("installationId") REFERENCES "SlackInstallation" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 

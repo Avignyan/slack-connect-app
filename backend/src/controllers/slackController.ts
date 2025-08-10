@@ -3,6 +3,7 @@ import { WebClient } from '@slack/web-api';
 import { getValidAccessToken } from '../services/tokenService.js';
 import * as installationRepo from '../repositories/installationRepository.js';
 import * as messageRepo from '../repositories/messageRepository.js';
+import type { Installation } from '@slack/oauth';
 
 // This is a helper for our single-workspace app
 const getFirstTeamId = async () => {
@@ -29,19 +30,46 @@ export const getChannels = async (req: Request, res: Response) => {
     }
 };
 
+// Replace the sendMessage function in backend/src/controllers/slackController.ts
+
 export const sendMessage = async (req: Request, res: Response) => {
-    const { channelId, message } = req.body;
+    // We now expect a `sendAsUser` boolean from the frontend
+    const { channelId, message, sendAsUser } = req.body;
+
+    if (!channelId || !message) {
+        return res.status(400).json({ error: 'Channel ID and message are required.' });
+    }
+
     try {
-        const teamId = await getFirstTeamId();
+        const teamId = await getFirstTeamId(); // Using our helper
         if (!teamId) return res.status(404).json({ error: 'No installation found.' });
 
-        const token = await getValidAccessToken(teamId);
-        if (!token) return res.status(400).json({ error: 'Could not retrieve a valid token.' });
+        // The tokenService already handles refresh logic, so we don't need it here.
+        // We just need to get the full installation object.
+        const installation = await installationRepo.findInstallationByTeamId(teamId);
+        if (!installation) return res.status(404).json({ error: 'Installation not found for team.' });
+
+        const installationData = installation.data as unknown as Installation;
+
+        let token;
+        // --- This is the new logic ---
+        if (sendAsUser) {
+            token = installationData.user?.token;
+            if (!token) return res.status(400).json({ error: 'User token not found.' });
+        } else {
+            token = installationData.bot?.token;
+            if (!token) return res.status(400).json({ error: 'Bot token not found.' });
+        }
+        // --- End of new logic ---
 
         const client = new WebClient(token);
-        await client.chat.postMessage({ channel: channelId, text: message });
+        await client.chat.postMessage({
+            channel: channelId,
+            text: message,
+        });
 
         res.status(200).json({ success: true, message: 'Message sent successfully.' });
+
     } catch (error) {
         console.error('Failed to send message:', error);
         res.status(500).json({ error: 'Failed to send message' });
@@ -49,17 +77,22 @@ export const sendMessage = async (req: Request, res: Response) => {
 };
 
 export const scheduleMessage = async (req: Request, res: Response) => {
-    const { channelId, message, sendAt } = req.body;
+    // Get the sendAsUser choice from the request
+    const { channelId, message, sendAt, sendAsUser } = req.body;
     try {
         const installation = await installationRepo.findFirstInstallation();
         if (!installation) return res.status(404).json({ error: 'No installation found.' });
 
-        await messageRepo.createScheduledMessage(channelId, message, new Date(sendAt), installation.id);
+        // Save the new message along with the sendAsUser flag
+        await messageRepo.createScheduledMessage(
+            channelId,
+            message,
+            new Date(sendAt),
+            installation.id,
+            sendAsUser // Pass the new value
+        );
         res.status(200).json({ success: true, message: 'Message scheduled successfully.' });
-    } catch (error) {
-        console.error('Failed to schedule message:', error);
-        res.status(500).json({ error: 'Failed to schedule message' });
-    }
+    } catch (error) { /* ... */ }
 };
 
 export const getScheduledMessages = async (req: Request, res: Response) => {

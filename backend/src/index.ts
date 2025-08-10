@@ -69,13 +69,13 @@ app.use(express.json());
 app.get('/slack/install', async (req, res) => {
     try {
         const url = await installer.generateInstallUrl({
-            scopes: ['chat:write', 'channels:read'],
+            scopes: ['chat:write', 'channels:read'], // These are BOT scopes
+            userScopes: ['chat:write'],             // <-- Add this line for USER scopes
             redirectUri: `${process.env.BACKEND_PUBLIC_URL}/auth/slack/callback`,
         });
         res.redirect(url);
     } catch (error) {
-        console.error(error);
-        res.status(500).send('Something went wrong!');
+        // ...
     }
 });
 

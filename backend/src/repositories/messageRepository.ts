@@ -2,13 +2,20 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-export const createScheduledMessage = (channelId: string, message: string, sendAt: Date, installationId: string) => {
+export const createScheduledMessage = (
+    channelId: string,
+    message: string,
+    sendAt: Date,
+    installationId: string,
+    sendAsUser: boolean
+) => {
     return prisma.scheduledMessage.create({
         data: {
             channelId,
             message,
             sendAt,
             installationId,
+            sendAsUser: sendAsUser,
         },
     });
 };
@@ -27,6 +34,10 @@ export const deleteScheduledMessageById = (id: string) => {
     return prisma.scheduledMessage.delete({ where: { id } });
 };
 
+export const deleteMessagesByInstallationId = (installationId: string) => {
+    return prisma.scheduledMessage.deleteMany({ where: { installationId } });
+};
+
 export const findAndMarkDueMessages = async () => {
     const dueMessages = await prisma.scheduledMessage.findMany({
         where: {
@@ -36,11 +47,12 @@ export const findAndMarkDueMessages = async () => {
         include: { installation: true },
     });
 
-    // Mark as 'PROCESSING' to prevent other schedulers from picking them up
-    await prisma.scheduledMessage.updateMany({
-        where: { id: { in: dueMessages.map(msg => msg.id) } },
-        data: { status: 'PROCESSING' },
-    });
+    if (dueMessages.length > 0) {
+        await prisma.scheduledMessage.updateMany({
+            where: { id: { in: dueMessages.map(msg => msg.id) } },
+            data: { status: 'PROCESSING' },
+        });
+    }
 
     return dueMessages;
 };
@@ -50,8 +62,4 @@ export const updateMessageStatus = (id: string, status: 'SENT' | 'FAILED') => {
         where: { id },
         data: { status },
     });
-};
-
-export const deleteMessagesByInstallationId = (installationId: string) => {
-    return prisma.scheduledMessage.deleteMany({ where: { installationId } });
 };
