@@ -17,11 +17,24 @@ const installer = new InstallProvider({
     clientSecret: process.env.SLACK_CLIENT_SECRET || '',
     stateVerification: false, // This disables the default cookie-based state store
     stateStore: {
+        /**
+         * Generates a random state parameter for Slack OAuth and stores it in the database.
+         *
+         * @returns {Promise<string>} The generated state string.
+         */
         generateStateParam: async (): Promise<string> => {
             const state = crypto.randomBytes(16).toString('hex');
             await prisma.oAuthState.create({ data: { state } });
             return state;
         },
+        /**
+         * Verifies the provided state parameter exists in the database for Slack OAuth.
+         *
+         * @param _now - Current time (unused)
+         * @param state - The state string to verify
+         * @returns {Promise<InstallURLOptions>} The install URL options if state is valid
+         * @throws {Error} If the state is invalid or not found
+         */
         verifyStateParam: async (_now, state): Promise<InstallURLOptions> => {
             const result = await prisma.oAuthState.findUnique({ where: { state } });
             if (result) {
@@ -32,6 +45,12 @@ const installer = new InstallProvider({
         },
     },
     installationStore: {
+        /**
+         * Stores a Slack installation in the database, keyed by team and user ID.
+         *
+         * @param installation - The Slack installation object
+         * @throws {Error} If the team ID is missing
+         */
         storeInstallation: async (installation: Installation) => {
             if (!installation.team?.id) {
                 throw new Error('Failed to store installation: Team ID is missing.');
@@ -55,6 +74,13 @@ const installer = new InstallProvider({
                 },
             });
         },
+        /**
+         * Fetches a Slack installation from the database by team and (optionally) user ID.
+         *
+         * @param query - The query object containing teamId and optionally userId
+         * @returns {Promise<Installation>} The installation data
+         * @throws {Error} If the team ID is missing or installation is not found
+         */
         fetchInstallation: async (query) => {
             if (!query.teamId) {
                 throw new Error('Failed to fetch installation: Team ID is missing.');
@@ -95,6 +121,13 @@ const port = process.env.PORT || 8000;
 app.use(cors());
 app.use(express.json());
 
+/**
+ * Express route handler to initiate Slack OAuth installation.
+ *
+ * Redirects the user to Slack's authorization page with required scopes.
+ *
+ * Route: GET /slack/install
+ */
 app.get('/slack/install', async (req, res) => {
     try {
         const url = await installer.generateInstallUrl({
@@ -119,7 +152,13 @@ app.get('/slack/install', async (req, res) => {
     }
 });
 
-// Also update the install-new-workspace endpoint if you have one
+/**
+ * Express route handler to initiate Slack OAuth installation for a new workspace.
+ *
+ * Redirects the user to Slack's authorization page with required scopes.
+ *
+ * Route: GET /slack/install-new-workspace
+ */
 app.get('/slack/install-new-workspace', async (req, res) => {
     try {
         const url = await installer.generateInstallUrl({
@@ -144,6 +183,13 @@ app.get('/slack/install-new-workspace', async (req, res) => {
     }
 });
 
+/**
+ * Express route handler for Slack OAuth callback.
+ *
+ * Handles the OAuth callback, creates a user session, fetches user profile info, and redirects to the frontend.
+ *
+ * Route: GET /auth/slack/callback
+ */
 app.get('/auth/slack/callback', async (req, res) => {
     await installer.handleCallback(req, res as unknown as ServerResponse, {
         success: async (installation, options, req, res) => {
@@ -248,6 +294,11 @@ app.get('/auth/slack/callback', async (req, res) => {
     });
 });
 
+/**
+ * Health check endpoint for the backend server.
+ *
+ * Route: GET /
+ */
 app.get('/', (req, res) => {
     res.send('Slack Connect backend is running! ✅');
 });

@@ -1,4 +1,4 @@
-import { Box, Typography, List, ListItem, Divider, Button, Chip, Card, CardContent } from '@mui/material';
+import { Box, Typography, List, Button, Chip, Card, CardContent } from '@mui/material';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import DeleteIcon from '@mui/icons-material/Delete';
 import TagIcon from '@mui/icons-material/Tag';
@@ -109,7 +109,7 @@ const ScheduledMessagesList = ({ messages, onCancel, channels }: ScheduledMessag
     return (
         <Box>
             <List sx={{ p: 0 }}>
-                {messages.map((msg, index) => (
+                {messages.map((msg) => (
                     <Card
                         key={msg.id}
                         sx={{

@@ -1,9 +1,24 @@
+/**
+ * Dashboard Page Component
+ * Provides interface for sending immediate and scheduled Slack messages
+ *
+ * Features:
+ * - Channel selection
+ * - Message composition
+ * - Immediate message sending
+ * - Message scheduling
+ * - Scheduled message management (view/cancel)
+ *
+ * @author Avignyan
+ * @lastUpdated 2025-08-11
+ */
+
 import { useState, useEffect, useCallback } from 'react';
 import {
     Container, Typography, Box, Select, MenuItem, TextField,
     Button, FormControl, InputLabel, CircularProgress, Switch,
-    FormControlLabel, Paper, Grid, Divider, IconButton, Tooltip,
-    Chip, Card, CardContent, CardHeader, Alert, Snackbar
+    FormControlLabel, Paper, Divider, IconButton, Tooltip,
+    Chip, Card, CardContent, Alert, Snackbar
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
@@ -24,9 +39,15 @@ type DashboardPageProps = {
     userInfo: UserInfo | null;
 };
 
+/**
+ * DashboardPage component
+ * Main interface for Slack message management
+ */
 const DashboardPage = ({ userInfo }: DashboardPageProps) => {
+    // Backend API URL
     const backendUrl = 'https://avigyan-slack-scheduler.loca.lt';
 
+    // State management
     const [channels, setChannels] = useState<SlackChannel[]>([]);
     const [selectedChannel, setSelectedChannel] = useState('');
     const [message, setMessage] = useState('');
@@ -35,65 +56,104 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
     const [loading, setLoading] = useState(true);
     const [sendAsUser, setSendAsUser] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
-    const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
+    const [snackbar, setSnackbar] = useState({
+        open: false,
+        message: '',
+        severity: 'success' as 'success' | 'error'
+    });
 
-    // Set min date-time for scheduler (current time)
+    /**
+     * Calculate minimum date-time for scheduler (current time + 1 minute)
+     * @returns Formatted date-time string (YYYY-MM-DDTHH:MM)
+     */
     const getMinDateTime = () => {
         const now = new Date();
         now.setMinutes(now.getMinutes() + 1); // Add 1 minute buffer
         return now.toISOString().slice(0, 16); // Format as YYYY-MM-DDTHH:MM
     };
 
-    // Helper for authenticated fetch requests
+    /**
+     * Helper for authenticated fetch requests
+     * Automatically adds authorization header with user token
+     */
     const authFetch = async (url: string, options: RequestInit = {}) => {
-        const headers = {
-            ...options.headers,
-            'Authorization': `Bearer ${userInfo?.token || ''}`,
-        };
+        try {
+            const headers = {
+                ...options.headers,
+                'Authorization': `Bearer ${userInfo?.token || ''}`,
+            };
 
-        return fetch(url, {
-            ...options,
-            headers,
-        });
+            return fetch(url, {
+                ...options,
+                headers,
+            });
+        } catch (error) {
+            console.error('Network error during fetch:', error);
+            throw new Error('Network error occurred. Please check your connection.');
+        }
     };
 
+    /**
+     * Fetch scheduled messages from the backend
+     * Used for initial load and refresh operations
+     */
     const fetchScheduledMessages = useCallback(async () => {
         try {
             setRefreshing(true);
             const response = await authFetch(`${backendUrl}/api/scheduled-messages`);
-            if (response.ok) {
-                const data = await response.json();
-                setScheduledMessages(data);
+
+            if (!response.ok) {
+                throw new Error(`Server responded with status: ${response.status}`);
             }
+
+            const data = await response.json();
+            setScheduledMessages(data);
         } catch (error) {
             console.error('Failed to fetch scheduled messages', error);
+            setSnackbar({
+                open: true,
+                message: 'Failed to load scheduled messages. Please try again.',
+                severity: 'error'
+            });
         } finally {
             setRefreshing(false);
         }
     }, [backendUrl, userInfo]);
 
+    // Initial data loading effect
     useEffect(() => {
         const fetchChannels = async () => {
             try {
                 const response = await authFetch(`${backendUrl}/api/channels`);
-                const data = await response.json();
-                if (response.ok) {
-                    setChannels(data);
-                    if (data.length > 0) {
-                        setSelectedChannel(data[0].id);
-                    }
-                    await fetchScheduledMessages();
+
+                if (!response.ok) {
+                    throw new Error(`Server responded with status: ${response.status}`);
                 }
+
+                const data = await response.json();
+                setChannels(data);
+
+                if (data.length > 0) {
+                    setSelectedChannel(data[0].id);
+                }
+
+                await fetchScheduledMessages();
             } catch (error) {
                 console.error('Failed to fetch channels', error);
+                setSnackbar({
+                    open: true,
+                    message: 'Failed to load channels. Please try refreshing.',
+                    severity: 'error'
+                });
             } finally {
                 setLoading(false);
             }
         };
+
         fetchChannels();
     }, [backendUrl, fetchScheduledMessages, userInfo]);
 
-    // Add polling to automatically refresh scheduled messages every 30 seconds
+    // Polling effect to refresh scheduled messages every 30 seconds
     useEffect(() => {
         // Initial fetch
         fetchScheduledMessages();
@@ -107,8 +167,12 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
         return () => clearInterval(intervalId);
     }, [fetchScheduledMessages]);
 
+    /**
+     * Handle sending a message immediately
+     */
     const handleSendNow = async () => {
         if (!selectedChannel || !message) return;
+
         try {
             setLoading(true);
             const response = await authFetch(`${backendUrl}/api/send-message`, {
@@ -120,6 +184,7 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
                     sendAsUser: sendAsUser
                 }),
             });
+
             if (response.ok) {
                 setSnackbar({
                     open: true,
@@ -128,17 +193,14 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
                 });
                 setMessage('');
             } else {
-                setSnackbar({
-                    open: true,
-                    message: 'Failed to send message.',
-                    severity: 'error'
-                });
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Failed to send message');
             }
         } catch (error) {
             console.error('Error sending message:', error);
             setSnackbar({
                 open: true,
-                message: 'Error sending message.',
+                message: error instanceof Error ? error.message : 'Error sending message.',
                 severity: 'error'
             });
         } finally {
@@ -146,8 +208,12 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
         }
     };
 
+    /**
+     * Handle scheduling a message for future delivery
+     */
     const handleSchedule = async () => {
         if (!selectedChannel || !message || !scheduleDate) return;
+
         try {
             setLoading(true);
             const response = await authFetch(`${backendUrl}/api/schedule-message`, {
@@ -160,6 +226,7 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
                     sendAsUser: sendAsUser
                 }),
             });
+
             if (response.ok) {
                 setSnackbar({
                     open: true,
@@ -170,17 +237,14 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
                 setScheduleDate('');
                 fetchScheduledMessages(); // Refresh list after scheduling
             } else {
-                setSnackbar({
-                    open: true,
-                    message: 'Failed to schedule message.',
-                    severity: 'error'
-                });
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Failed to schedule message');
             }
         } catch (error) {
             console.error('Error scheduling message:', error);
             setSnackbar({
                 open: true,
-                message: 'Error scheduling message.',
+                message: error instanceof Error ? error.message : 'Error scheduling message.',
                 severity: 'error'
             });
         } finally {
@@ -188,12 +252,18 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
         }
     };
 
+    /**
+     * Handle cancellation of a scheduled message
+     * @param id ID of the message to cancel
+     */
     const handleCancelMessage = async (id: string) => {
         if (!window.confirm('Are you sure you want to cancel this scheduled message?')) return;
+
         try {
             const response = await authFetch(`${backendUrl}/api/scheduled-messages/${id}`, {
                 method: 'DELETE',
             });
+
             if (response.ok) {
                 // Update local state immediately instead of fetching again
                 setScheduledMessages(prevMessages =>
@@ -205,27 +275,31 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
                     severity: 'success'
                 });
             } else {
-                setSnackbar({
-                    open: true,
-                    message: 'Failed to cancel message.',
-                    severity: 'error'
-                });
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Failed to cancel message');
             }
         } catch (error) {
             console.error('Error cancelling message:', error);
             setSnackbar({
                 open: true,
-                message: 'Error cancelling message.',
+                message: error instanceof Error ? error.message : 'Error cancelling message.',
                 severity: 'error'
             });
         }
     };
 
+    /**
+     * Manually refresh the scheduled messages list
+     */
     const handleRefresh = () => {
         fetchScheduledMessages();
     };
 
-    // New function to check if a message time has passed
+    /**
+     * Check if a message scheduled time has already passed
+     * @param sendAt ISO date string of scheduled time
+     * @returns boolean indicating if message is due/past
+     */
     const isMessageDue = (sendAt: string) => {
         const sendTime = new Date(sendAt).getTime();
         const now = new Date().getTime();
@@ -236,15 +310,16 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
     // This provides immediate UI feedback without waiting for the next poll
     const pendingMessages = scheduledMessages.filter(msg => !isMessageDue(msg.sendAt));
 
-    // Get stats
+    // Calculate dashboard stats
     const scheduledCount = pendingMessages.length;
     const nextScheduled = pendingMessages.length > 0
         ? new Date(Math.min(...pendingMessages.map(msg => new Date(msg.sendAt).getTime())))
         : null;
 
-    // Get the selected channel name
+    // Get the selected channel name for display
     const selectedChannelName = channels.find(ch => ch.id === selectedChannel)?.name || '';
 
+    // Show loading state when first loading the channels
     if (loading && channels.length === 0) {
         return (
             <Box sx={{ display: 'flex', justifyContent: 'center', mt: 10 }}>
@@ -256,8 +331,9 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
     return (
         <Container maxWidth="lg" sx={{ mt: 4, mb: 8 }}>
             {/* Stats row */}
-            <Grid container spacing={3} sx={{ mb: 4 }}>
-                <Grid item xs={12} md={6} lg={3}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', mx: -1.5, mb: 3 }}>
+                {/* Scheduled Messages Stat */}
+                <Box sx={{ width: { xs: '100%', md: '50%', lg: '25%' }, px: 1.5, mb: 3 }}>
                     <Card elevation={2}>
                         <CardContent sx={{ display: 'flex', alignItems: 'center', p: 2 }}>
                             <Box sx={{
@@ -279,9 +355,10 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
                             </Box>
                         </CardContent>
                     </Card>
-                </Grid>
+                </Box>
 
-                <Grid item xs={12} md={6} lg={3}>
+                {/* Next Scheduled Stat */}
+                <Box sx={{ width: { xs: '100%', md: '50%', lg: '25%' }, px: 1.5, mb: 3 }}>
                     <Card elevation={2}>
                         <CardContent sx={{ display: 'flex', alignItems: 'center', p: 2 }}>
                             <Box sx={{
@@ -305,9 +382,10 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
                             </Box>
                         </CardContent>
                     </Card>
-                </Grid>
+                </Box>
 
-                <Grid item xs={12} md={6} lg={3}>
+                {/* Available Channels Stat */}
+                <Box sx={{ width: { xs: '100%', md: '50%', lg: '25%' }, px: 1.5, mb: 3 }}>
                     <Card elevation={2}>
                         <CardContent sx={{ display: 'flex', alignItems: 'center', p: 2 }}>
                             <Box sx={{
@@ -329,12 +407,13 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
                             </Box>
                         </CardContent>
                     </Card>
-                </Grid>
-            </Grid>
+                </Box>
+            </Box>
 
-            <Grid container spacing={4}>
+            {/* Main Content */}
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', mx: -2 }}>
                 {/* Left Side: Message Form */}
-                <Grid item xs={12} lg={5}>
+                <Box sx={{ width: { xs: '100%', lg: '41.67%' }, px: 2, mb: { xs: 4, lg: 0 } }}>
                     <Paper
                         elevation={2}
                         sx={{
@@ -462,10 +541,10 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
                             </Box>
                         )}
                     </Paper>
-                </Grid>
+                </Box>
 
                 {/* Right Side: Scheduled Messages List */}
-                <Grid item xs={12} lg={7}>
+                <Box sx={{ width: { xs: '100%', lg: '58.33%' }, px: 2 }}>
                     <Paper
                         elevation={2}
                         sx={{
@@ -494,8 +573,8 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
                             channels={channels}
                         />
                     </Paper>
-                </Grid>
-            </Grid>
+                </Box>
+            </Box>
 
             {/* Snackbar for notifications */}
             <Snackbar

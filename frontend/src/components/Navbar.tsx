@@ -15,7 +15,7 @@ type NavbarProps = {
     onWorkspaceSwitch?: (teamId: string) => void;
 };
 
-const Navbar = ({ isConnected, onLogout, userName, teamName, teamIcon, ...otherProps }: NavbarProps) => {
+const Navbar = ({ isConnected, onLogout, userName, teamName, teamIcon,  }: NavbarProps) => {
     return (
         <AppBar
             position="static"

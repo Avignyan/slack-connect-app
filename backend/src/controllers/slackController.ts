@@ -6,6 +6,19 @@ import * as messageRepo from '../repositories/messageRepository.js';
 import type { Installation } from '@slack/oauth';
 import crypto from 'crypto';
 
+/**
+ * Retrieves the list of public Slack channels the authenticated user is a member of.
+ *
+ * Route: GET /api/channels
+ *
+ * Authentication: Requires a valid user session (req.user).
+ *
+ * Response:
+ *   - 200: Array of channel objects the user is a member of.
+ *   - 401: If user is not authenticated.
+ *   - 400: If a valid token cannot be retrieved.
+ *   - 500: On server or Slack API error.
+ */
 export const getChannels = async (req: Request, res: Response) => {
     try {
         // Get the authenticated user's info from the request
@@ -31,6 +44,23 @@ export const getChannels = async (req: Request, res: Response) => {
     }
 };
 
+/**
+ * Sends a message to a specified Slack channel, either as the user or as the bot.
+ *
+ * Route: POST /api/send-message
+ *
+ * Request Body:
+ *   - channelId: The ID of the Slack channel to send the message to.
+ *   - message: The message text to send.
+ *   - sendAsUser: (optional) Boolean, if true sends as the user, otherwise as the bot.
+ *
+ * Authentication: Requires a valid user session (req.user).
+ *
+ * Response:
+ *   - 200: On successful message send.
+ *   - 400: If required fields are missing or token cannot be retrieved.
+ *   - 500: On server or Slack API error.
+ */
 export const sendMessage = async (req: Request, res: Response) => {
     const { channelId, message, sendAsUser } = req.body;
 
@@ -78,6 +108,24 @@ export const sendMessage = async (req: Request, res: Response) => {
     }
 };
 
+/**
+ * Schedules a message to be sent at a future date/time for the authenticated user.
+ *
+ * Route: POST /api/schedule-message
+ *
+ * Request Body:
+ *   - channelId: The ID of the Slack channel.
+ *   - message: The message text.
+ *   - sendAt: The date/time to send the message (ISO string).
+ *   - sendAsUser: (optional) Boolean, if true sends as the user, otherwise as the bot.
+ *
+ * Authentication: Requires a valid user session (req.user).
+ *
+ * Response:
+ *   - 200: On successful scheduling.
+ *   - 401/404: If user or installation not found.
+ *   - 500: On server error.
+ */
 export const scheduleMessage = async (req: Request, res: Response) => {
     const { channelId, message, sendAt, sendAsUser } = req.body;
     try {
@@ -109,6 +157,18 @@ export const scheduleMessage = async (req: Request, res: Response) => {
     }
 };
 
+/**
+ * Retrieves all pending scheduled messages for the authenticated user.
+ *
+ * Route: GET /api/scheduled-messages
+ *
+ * Authentication: Requires a valid user session (req.user).
+ *
+ * Response:
+ *   - 200: Array of scheduled message objects.
+ *   - 401/404: If user or installation not found.
+ *   - 500: On server error.
+ */
 export const getScheduledMessages = async (req: Request, res: Response) => {
     try {
         // Get the authenticated user's info
@@ -133,6 +193,18 @@ export const getScheduledMessages = async (req: Request, res: Response) => {
     }
 };
 
+/**
+ * Cancels a scheduled message by ID for the authenticated user.
+ *
+ * Route: DELETE /api/scheduled-messages/:id
+ *
+ * Authentication: Requires a valid user session (req.user).
+ *
+ * Response:
+ *   - 200: On successful cancellation.
+ *   - 401/403/404: If user not authorized or message not found.
+ *   - 500: On server error.
+ */
 export const cancelScheduledMessage = async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
@@ -167,6 +239,18 @@ export const cancelScheduledMessage = async (req: Request, res: Response) => {
     }
 };
 
+/**
+ * Logs out the authenticated user, deleting their session and installation.
+ *
+ * Route: POST /api/logout
+ *
+ * Authentication: Requires a valid user session (req.user).
+ *
+ * Response:
+ *   - 200: On successful logout.
+ *   - 401/404: If user or installation not found.
+ *   - 500: On server error.
+ */
 export const logout = async (req: Request, res: Response) => {
     try {
         // Get the authenticated user's info
@@ -202,6 +286,20 @@ export const logout = async (req: Request, res: Response) => {
     }
 };
 
+/**
+ * Logs in a user by userId and teamId, creating a session token if installation exists.
+ *
+ * Route: POST /api/login
+ *
+ * Request Body:
+ *   - userId: Slack user ID.
+ *   - teamId: Slack team ID.
+ *
+ * Response:
+ *   - 200: On successful login (returns token, userId, teamId, expiresAt).
+ *   - 400/404: If required fields missing or installation not found.
+ *   - 500: On server error.
+ */
 export const login = async (req: Request, res: Response) => {
     try {
         const { userId, teamId } = req.body;

@@ -1,8 +1,33 @@
+/**
+ * Message Scheduler Job
+ *
+ * This job runs on a schedule (every minute) to check for due scheduled messages in the database.
+ * It sends each due message to Slack using the appropriate user or bot token, updates the message status,
+ * and logs the result. Failed messages are marked as such for later review.
+ *
+ * Key Functions:
+ * - sendDueMessages: Finds and sends all due messages, updating their status.
+ * - startScheduler: Starts the cron job to run sendDueMessages every minute.
+ *
+ * Usage:
+ * Call startScheduler() once when the backend server starts.
+ */
+
 import cron from 'node-cron';
 import { WebClient } from '@slack/web-api';
 import { Installation } from '@slack/oauth';
 import { findAndMarkDueMessages, updateMessageStatus } from '../repositories/messageRepository.js';
 
+/**
+ * Finds and sends all due scheduled messages.
+ * For each message:
+ *   - Determines whether to use the user or bot token.
+ *   - Sends the message to the specified Slack channel.
+ *   - Updates the message status to SENT or FAILED.
+ *   - Logs the result for monitoring.
+ *
+ * This function is intended to be run by a scheduler (cron job).
+ */
 const sendDueMessages = async () => {
     console.log('Scheduler: Checking for due messages...');
     const dueMessages = await findAndMarkDueMessages();
@@ -47,6 +72,11 @@ const sendDueMessages = async () => {
     }
 };
 
+/**
+ * Starts the message scheduler cron job.
+ * Runs sendDueMessages every minute.
+ * Should be called once at server startup.
+ */
 const startScheduler = () => {
     cron.schedule('* * * * *', sendDueMessages);
     console.log('Message scheduler started, will check for messages every minute.');

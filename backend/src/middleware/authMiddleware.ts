@@ -13,6 +13,20 @@ declare global {
     }
 }
 
+/**
+ * Express middleware to authenticate API requests using session tokens.
+ *
+ * - Validates the Authorization header and token.
+ * - Checks if the session exists and is not expired.
+ * - Attaches user and team info to the request object.
+ * - Responds with appropriate error messages for invalid or expired sessions.
+ *
+ * Usage: Add as middleware to protected API routes.
+ *
+ * @param req Express request object
+ * @param res Express response object
+ * @param next Express next middleware function
+ */
 export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
     // Get the session token from the Authorization header
     const authHeader = req.headers.authorization;
