@@ -18,7 +18,7 @@ export interface UserInfo {
 }
 
 function App() {
-    const backendUrl = 'https://slack-connect-ap.netlify.app/';
+    const backendUrl = 'https://slack-connect-ap.netlify.app/.netlify/functions/api';
     const [isConnected, setIsConnected] = useState<boolean | null>(null);
     const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
     const [isLoading, setIsLoading] = useState(true);
