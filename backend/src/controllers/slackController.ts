@@ -4,8 +4,9 @@ import { getValidAccessToken } from '../services/tokenService.js';
 import * as installationRepo from '../repositories/installationRepository.js';
 import * as messageRepo from '../repositories/messageRepository.js';
 import type { Installation } from '@slack/oauth';
+import crypto from 'crypto';
 
-// This is a helper for our single-workspace app
+// Updated helper for the multi-user app
 const getFirstTeamId = async () => {
     const installation = await installationRepo.findFirstInstallation();
     return installation?.teamId || null;
@@ -30,10 +31,7 @@ export const getChannels = async (req: Request, res: Response) => {
     }
 };
 
-// Replace the sendMessage function in backend/src/controllers/slackController.ts
-
 export const sendMessage = async (req: Request, res: Response) => {
-    // We now expect a `sendAsUser` boolean from the frontend
     const { channelId, message, sendAsUser } = req.body;
 
     if (!channelId || !message) {
@@ -41,18 +39,16 @@ export const sendMessage = async (req: Request, res: Response) => {
     }
 
     try {
-        const teamId = await getFirstTeamId(); // Using our helper
+        const teamId = await getFirstTeamId();
         if (!teamId) return res.status(404).json({ error: 'No installation found.' });
 
-        // The tokenService already handles refresh logic, so we don't need it here.
-        // We just need to get the full installation object.
+        // Using findInstallationByTeamId instead of findInstallationByTeamAndUser
         const installation = await installationRepo.findInstallationByTeamId(teamId);
         if (!installation) return res.status(404).json({ error: 'Installation not found for team.' });
 
         const installationData = installation.data as unknown as Installation;
 
         let token;
-        // --- This is the new logic ---
         if (sendAsUser) {
             token = installationData.user?.token;
             if (!token) return res.status(400).json({ error: 'User token not found.' });
@@ -60,7 +56,6 @@ export const sendMessage = async (req: Request, res: Response) => {
             token = installationData.bot?.token;
             if (!token) return res.status(400).json({ error: 'Bot token not found.' });
         }
-        // --- End of new logic ---
 
         const client = new WebClient(token);
         await client.chat.postMessage({
@@ -77,22 +72,23 @@ export const sendMessage = async (req: Request, res: Response) => {
 };
 
 export const scheduleMessage = async (req: Request, res: Response) => {
-    // Get the sendAsUser choice from the request
     const { channelId, message, sendAt, sendAsUser } = req.body;
     try {
         const installation = await installationRepo.findFirstInstallation();
         if (!installation) return res.status(404).json({ error: 'No installation found.' });
 
-        // Save the new message along with the sendAsUser flag
         await messageRepo.createScheduledMessage(
             channelId,
             message,
             new Date(sendAt),
             installation.id,
-            sendAsUser // Pass the new value
+            sendAsUser
         );
         res.status(200).json({ success: true, message: 'Message scheduled successfully.' });
-    } catch (error) { /* ... */ }
+    } catch (error) {
+        console.error('Failed to schedule message:', error);
+        res.status(500).json({ error: 'Failed to schedule message' });
+    }
 };
 
 export const getScheduledMessages = async (req: Request, res: Response) => {
@@ -119,8 +115,6 @@ export const cancelScheduledMessage = async (req: Request, res: Response) => {
     }
 };
 
-// Add this function to backend/src/controllers/slackController.ts
-
 export const logout = async (req: Request, res: Response) => {
     try {
         const installation = await installationRepo.findFirstInstallation();
@@ -138,5 +132,44 @@ export const logout = async (req: Request, res: Response) => {
     } catch (error) {
         console.error('Failed to logout:', error);
         res.status(500).json({ error: 'Failed to logout' });
+    }
+};
+
+export const login = async (req: Request, res: Response) => {
+    try {
+        const { userId, teamId } = req.body;
+
+        if (!userId || !teamId) {
+            return res.status(400).json({ error: 'User ID and Team ID are required.' });
+        }
+
+        // Find the installation for this user and team
+        const installation = await installationRepo.findInstallationByTeamIdAndUserId(teamId, userId);
+
+        if (!installation) {
+            return res.status(404).json({ error: 'Installation not found. Please connect your Slack workspace first.' });
+        }
+
+        // Generate a session token
+        const token = crypto.randomBytes(32).toString('hex');
+
+        // Set token expiration to 30 days from now
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 30);
+
+        // Store the session
+        await installationRepo.createUserSession(userId, teamId, token, expiresAt);
+
+        // Return the token to the client
+        res.status(200).json({
+            success: true,
+            token,
+            expiresAt,
+            userId,
+            teamId
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'Failed to login' });
     }
 };

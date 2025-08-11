@@ -30,6 +30,13 @@ export const findPendingMessagesByInstallationId = (installationId: string) => {
     });
 };
 
+// New method to find a specific scheduled message
+export const findScheduledMessageById = (id: string) => {
+    return prisma.scheduledMessage.findUnique({
+        where: { id }
+    });
+};
+
 export const deleteScheduledMessageById = (id: string) => {
     return prisma.scheduledMessage.delete({ where: { id } });
 };

@@ -1,16 +1,30 @@
 import { WebClient } from '@slack/web-api';
 import { Installation } from '@slack/oauth';
 import { PrismaClient } from '@prisma/client';
-// We still need a prisma client here for the update, this could also be moved to the repo
 const prisma = new PrismaClient();
 
-// This function will get an installation, check if the token is expiring,
-// refresh it if needed, and return a valid token.
-export const getValidAccessToken = async (teamId: string): Promise<string | null> => {
-    // 1. Find the installation for the team using the repository
-    const installation = await prisma.slackInstallation.findUnique({
-        where: { teamId },
-    });
+// Updated to accept both teamId and userId
+export const getValidAccessToken = async (teamId: string, userId?: string): Promise<string | null> => {
+    let installation;
+
+    // Try to find installation with both teamId and userId if userId is provided
+    if (userId) {
+        installation = await prisma.slackInstallation.findUnique({
+            where: {
+                teamId_userId: {
+                    teamId,
+                    userId
+                }
+            }
+        });
+    }
+
+    // Fallback to finding by teamId only if userId not provided or no installation found
+    if (!installation) {
+        installation = await prisma.slackInstallation.findFirst({
+            where: { teamId },
+        });
+    }
 
     if (!installation) {
         return null;
@@ -38,7 +52,7 @@ export const getValidAccessToken = async (teamId: string): Promise<string | null
         return token;
     }
 
-    console.log(`Access token for team ${teamId} is expiring. Refreshing now...`);
+    console.log(`Access token for team ${teamId} ${userId ? `and user ${userId}` : ''} is expiring. Refreshing now...`);
 
     // 3. If it's expiring, use the refresh token to get a new one
     try {
@@ -67,13 +81,32 @@ export const getValidAccessToken = async (teamId: string): Promise<string | null
             data: { data: newInstallationData as any },
         });
 
-        console.log(`Successfully refreshed access token for team ${teamId}.`);
+        console.log(`Successfully refreshed access token for team ${teamId} ${userId ? `and user ${userId}` : ''}.`);
 
         // 5. Return the new access token
         return newInstallationData.bot.token;
     } catch (error) {
-        console.error(`Error refreshing token for team ${teamId}:`, error);
+        console.error(`Error refreshing token for team ${teamId} ${userId ? `and user ${userId}` : ''}:`, error);
         // If refresh fails, return the old token, it might still work for a few minutes
         return token;
     }
+};
+
+// For getting user-specific tokens
+export const getUserToken = async (teamId: string, userId: string): Promise<string | null> => {
+    const installation = await prisma.slackInstallation.findUnique({
+        where: {
+            teamId_userId: {
+                teamId,
+                userId
+            }
+        }
+    });
+
+    if (!installation) {
+        return null;
+    }
+
+    const installationData = installation.data as unknown as Installation;
+    return installationData.user?.token || null;
 };

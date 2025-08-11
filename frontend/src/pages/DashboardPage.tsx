@@ -5,12 +5,19 @@ import {
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material';
 import ScheduledMessagesList from '../components/ScheduledMessagesList';
+// Use type-only import here
+import type { UserInfo } from '../App';
 
 // Define types for our data structures
 type SlackChannel = { id: string; name: string };
 type ScheduledMessage = { id: string; channelId: string; message: string; sendAt: string };
 
-const DashboardPage = () => {
+// Update props to include userInfo
+type DashboardPageProps = {
+    userInfo: UserInfo | null;
+};
+
+const DashboardPage = ({ userInfo }: DashboardPageProps) => {
     const backendUrl = 'https://avigyan-slack-scheduler.loca.lt';
 
     const [channels, setChannels] = useState<SlackChannel[]>([]);
@@ -21,20 +28,35 @@ const DashboardPage = () => {
     const [loading, setLoading] = useState(true);
     const [sendAsUser, setSendAsUser] = useState(false);
 
+    // Helper for authenticated fetch requests
+    const authFetch = async (url: string, options: RequestInit = {}) => {
+        const headers = {
+            ...options.headers,
+            'Authorization': `Bearer ${userInfo?.token || ''}`,
+        };
+
+        return fetch(url, {
+            ...options,
+            headers,
+        });
+    };
+
     const fetchScheduledMessages = useCallback(async () => {
         try {
-            const response = await fetch(`${backendUrl}/api/scheduled-messages`);
+            const response = await authFetch(`${backendUrl}/api/scheduled-messages`);
             if (response.ok) {
                 const data = await response.json();
                 setScheduledMessages(data);
             }
-        } catch (error) { console.error('Failed to fetch scheduled messages', error); }
-    }, [backendUrl]);
+        } catch (error) {
+            console.error('Failed to fetch scheduled messages', error);
+        }
+    }, [backendUrl, userInfo]);
 
     useEffect(() => {
         const fetchChannels = async () => {
             try {
-                const response = await fetch(`${backendUrl}/api/channels`);
+                const response = await authFetch(`${backendUrl}/api/channels`);
                 const data = await response.json();
                 if (response.ok) {
                     setChannels(data);
@@ -50,12 +72,12 @@ const DashboardPage = () => {
             }
         };
         fetchChannels();
-    }, [backendUrl, fetchScheduledMessages]);
+    }, [backendUrl, fetchScheduledMessages, userInfo]);
 
     const handleSendNow = async () => {
         if (!selectedChannel || !message) return;
         try {
-            const response = await fetch(`${backendUrl}/api/send-message`, {
+            const response = await authFetch(`${backendUrl}/api/send-message`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -67,14 +89,18 @@ const DashboardPage = () => {
             if (response.ok) {
                 alert('Message sent successfully!');
                 setMessage('');
-            } else { alert('Failed to send message.'); }
-        } catch (error) { console.error('Error sending message:', error); }
+            } else {
+                alert('Failed to send message.');
+            }
+        } catch (error) {
+            console.error('Error sending message:', error);
+        }
     };
 
     const handleSchedule = async () => {
         if (!selectedChannel || !message || !scheduleDate) return;
         try {
-            const response = await fetch(`${backendUrl}/api/schedule-message`, {
+            const response = await authFetch(`${backendUrl}/api/schedule-message`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -89,21 +115,29 @@ const DashboardPage = () => {
                 setMessage('');
                 setScheduleDate('');
                 fetchScheduledMessages();
-            } else { alert('Failed to schedule message.'); }
-        } catch (error) { console.error('Error scheduling message:', error); }
+            } else {
+                alert('Failed to schedule message.');
+            }
+        } catch (error) {
+            console.error('Error scheduling message:', error);
+        }
     };
 
     const handleCancelMessage = async (id: string) => {
         if (!window.confirm('Are you sure you want to cancel this scheduled message?')) return;
         try {
-            const response = await fetch(`${backendUrl}/api/scheduled-messages/${id}`, {
+            const response = await authFetch(`${backendUrl}/api/scheduled-messages/${id}`, {
                 method: 'DELETE',
             });
             if (response.ok) {
                 alert('Message cancelled successfully!');
                 fetchScheduledMessages();
-            } else { alert('Failed to cancel message.'); }
-        } catch (error) { console.error('Error cancelling message:', error); }
+            } else {
+                alert('Failed to cancel message.');
+            }
+        } catch (error) {
+            console.error('Error cancelling message:', error);
+        }
     };
 
     if (loading) {
@@ -165,8 +199,22 @@ const DashboardPage = () => {
                             sx={{ mb: 2, display: 'block' }}
                         />
                         <Box sx={{ display: 'flex', gap: 1 }}>
-                            <Button variant="contained" onClick={handleSendNow} disabled={!message || !selectedChannel} fullWidth>Send Now</Button>
-                            <Button variant="outlined" onClick={handleSchedule} disabled={!message || !scheduleDate || !selectedChannel} fullWidth>Schedule</Button>
+                            <Button
+                                variant="contained"
+                                onClick={handleSendNow}
+                                disabled={!message || !selectedChannel}
+                                fullWidth
+                            >
+                                Send Now
+                            </Button>
+                            <Button
+                                variant="outlined"
+                                onClick={handleSchedule}
+                                disabled={!message || !scheduleDate || !selectedChannel}
+                                fullWidth
+                            >
+                                Schedule
+                            </Button>
                         </Box>
                     </Box>
                 </Box>

@@ -3,13 +3,14 @@ import { AppBar, Toolbar, Typography, Box, IconButton } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
 import appLogo from '../assets/logo.png';
 
-// Define the props the Navbar will accept
+// Updated props to include userName
 type NavbarProps = {
     isConnected: boolean | null;
     onLogout: () => void;
+    userName?: string; // Added userName as optional prop
 };
 
-const Navbar = ({ isConnected, onLogout }: NavbarProps) => {
+const Navbar = ({ isConnected, onLogout, userName }: NavbarProps) => {
     return (
         <AppBar
             position="static"
@@ -21,6 +22,14 @@ const Navbar = ({ isConnected, onLogout }: NavbarProps) => {
                 <Typography variant="h5" component="div" sx={{ flexGrow: 1, color: '#ffffff', fontWeight: 'bold' }}>
                     ConnectFlow
                 </Typography>
+
+                {/* Display the user name if connected and name is available */}
+                {isConnected && userName && (
+                    <Typography variant="subtitle1" sx={{ mr: 2, color: '#ffffff' }}>
+                        {userName}
+                    </Typography>
+                )}
+
                 {/* Conditionally render the logout button */}
                 {isConnected && (
                     <IconButton color="inherit" onClick={onLogout} title="Logout">
