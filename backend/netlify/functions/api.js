@@ -17,7 +17,8 @@ exports.handler = async (event, context) => {
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
         'Pragma': 'no-cache',
-        'Expires': '0'
+        'Expires': '0',
+        'Content-Type': 'application/json'
     };
 
     // Handle OPTIONS requests (CORS preflight)
@@ -32,6 +33,7 @@ exports.handler = async (event, context) => {
     try {
         // Extract the path from the full URL - removing the Netlify Functions prefix
         const path = event.path.replace('/.netlify/functions/api', '') || '/';
+        console.log(`Cleaned path: "${path}"`);
 
         // Simple router based on path
         if (path === '/' || path === '') {
@@ -130,15 +132,16 @@ exports.handler = async (event, context) => {
                 body: ''
             };
         }
-        else if (path === '/channels') {
+        // FIX: Handle both /channels and /api/channels (the duplicate path)
+        else if (path === '/channels' || path === '/api/channels') {
             // Get channels list
-            console.log('Handling /channels route');
+            console.log('Handling channels route');
 
             const authHeader = event.headers.authorization || event.headers.Authorization;
             if (!authHeader || !authHeader.startsWith('Bearer ')) {
                 return {
                     statusCode: 401,
-                    headers: { ...headers, 'Content-Type': 'application/json' },
+                    headers,
                     body: JSON.stringify({ error: 'No valid authorization token provided' })
                 };
             }
@@ -156,31 +159,34 @@ exports.handler = async (event, context) => {
             if (!response.data.ok) {
                 return {
                     statusCode: 400,
-                    headers: { ...headers, 'Content-Type': 'application/json' },
+                    headers,
                     body: JSON.stringify({ error: response.data.error })
                 };
             }
 
             return {
                 statusCode: 200,
-                headers: { ...headers, 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify(response.data.channels || [])
             };
         }
-        else if (path === '/scheduled-messages') {
+        // FIX: Handle both /scheduled-messages and /api/scheduled-messages
+        else if (path === '/scheduled-messages' || path === '/api/scheduled-messages') {
             // Placeholder for scheduled messages endpoint
+            console.log('Handling scheduled-messages route');
             return {
                 statusCode: 200,
-                headers: { ...headers, 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify([])
             };
         }
         else {
-            // Not found
+            // Not found - log the path that wasn't matched
+            console.log(`No route matched for path: ${path}`);
             return {
                 statusCode: 404,
-                headers: { ...headers, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ error: 'Not found' })
+                headers,
+                body: JSON.stringify({ error: 'Not found', path })
             };
         }
     } catch (error) {
@@ -189,7 +195,7 @@ exports.handler = async (event, context) => {
 
         return {
             statusCode: 500,
-            headers: { ...headers, 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({
                 error: 'Internal server error',
                 message: error.message
