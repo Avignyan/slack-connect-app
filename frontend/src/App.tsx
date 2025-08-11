@@ -6,11 +6,14 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 
 // Define the user info type
+// Update the UserInfo interface in App.tsx
 export interface UserInfo {
     token: string;
     userId: string;
     teamId: string;
     userName?: string;
+    teamName?: string;  // Make sure this is included
+    teamIcon?: string;  // And this too if you want to use it
     expiresAt?: string;
 }
 
@@ -72,9 +75,30 @@ function App() {
         // Check connection if no valid user info
         const checkConnection = async () => {
             try {
-                const response = await fetch(`${backendUrl}/api/channels`);
-                setIsConnected(response.ok);
+                // Check if the stored token is valid
+                if (storedUserInfo) {
+                    const parsedUserInfo = JSON.parse(storedUserInfo) as UserInfo;
+                    const response = await fetch(`${backendUrl}/api/channels`, {
+                        headers: {
+                            'Authorization': `Bearer ${parsedUserInfo.token}`
+                        }
+                    });
+
+                    // If the token is invalid, clear it
+                    if (!response.ok) {
+                        console.log('Stored token is invalid, clearing it');
+                        localStorage.removeItem('userInfo');
+                        setIsConnected(false);
+                    } else {
+                        setUserInfo(parsedUserInfo);
+                        setIsConnected(true);
+                    }
+                } else {
+                    setIsConnected(false);
+                }
             } catch (error) {
+                console.error('Connection check failed:', error);
+                localStorage.removeItem('userInfo');
                 setIsConnected(false);
             } finally {
                 setIsLoading(false);
@@ -116,11 +140,35 @@ function App() {
         setIsConnected(true);
     };
 
+    // Define a function to validate icon URL
+    const getValidIconUrl = (url: string | undefined): string | undefined => {
+        if (!url) return undefined;
+
+        // Check if it's a valid URL
+        try {
+            new URL(url); // This will throw if invalid
+            return url;
+        } catch (e) {
+            console.warn('Invalid team icon URL:', url);
+            return undefined;
+        }
+    };
+
+
+
     if (isLoading) {
         return (
             <>
                 <CssBaseline />
-                <Navbar isConnected={null} onLogout={handleLogout} />
+                <Navbar
+                    isConnected={null}
+                    onLogout={handleLogout}
+                    userName={undefined}  // Changed from null to undefined
+                    teamName={undefined}  // Changed from null to undefined
+                    teamIcon={undefined}  // Changed from null to undefined
+                    userInfo={null}
+                    backendUrl={backendUrl}
+                />
                 <Box sx={{ display: 'flex', justifyContent: 'center', mt: 10 }}>
                     <CircularProgress />
                 </Box>
@@ -135,6 +183,10 @@ function App() {
                 isConnected={isConnected}
                 onLogout={handleLogout}
                 userName={userInfo?.userName}
+                teamName={userInfo?.teamName}
+                teamIcon={getValidIconUrl(userInfo?.teamIcon)}
+                userInfo={userInfo}
+                backendUrl={backendUrl}
             />
             {isConnected
                 ? <DashboardPage userInfo={userInfo} />

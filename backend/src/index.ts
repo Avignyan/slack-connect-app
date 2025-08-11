@@ -7,8 +7,8 @@ import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
 import apiRoutes from './routes/apiRoutes.js';
 import startScheduler from "./jobs/messageScheduler.js";
-// Add this import to fix the first error
 import * as installationRepo from './repositories/installationRepository.js';
+import { WebClient } from '@slack/web-api';
 
 const prisma = new PrismaClient();
 
@@ -98,8 +98,43 @@ app.use(express.json());
 app.get('/slack/install', async (req, res) => {
     try {
         const url = await installer.generateInstallUrl({
-            scopes: ['chat:write', 'channels:read'], // These are BOT scopes
-            userScopes: ['chat:write'],             // User scopes
+            scopes: [
+                'chat:write',        // To send messages
+                'channels:read',     // To read public channels
+                'groups:read',       // To read private channels
+                'im:read',           // To read direct messages
+                'mpim:read',         // To read group DMs
+                'users:read'         // To read user profiles (can be bot scope too)
+            ],
+            userScopes: [
+                'chat:write',        // For sending messages as user
+                'users:read'         // For reading user's own profile
+            ],
+            redirectUri: `${process.env.BACKEND_PUBLIC_URL}/auth/slack/callback`,
+        });
+        res.redirect(url);
+    } catch (error) {
+        console.error('Error generating install URL:', error);
+        res.status(500).send('Error generating Slack installation URL');
+    }
+});
+
+// Also update the install-new-workspace endpoint if you have one
+app.get('/slack/install-new-workspace', async (req, res) => {
+    try {
+        const url = await installer.generateInstallUrl({
+            scopes: [
+                'chat:write',
+                'channels:read',
+                'groups:read',
+                'im:read',
+                'mpim:read',
+                'users:read'
+            ],
+            userScopes: [
+                'chat:write',
+                'users:read'
+            ],
             redirectUri: `${process.env.BACKEND_PUBLIC_URL}/auth/slack/callback`,
         });
         res.redirect(url);
@@ -134,18 +169,50 @@ app.get('/auth/slack/callback', async (req, res) => {
                 // Store the session
                 await installationRepo.createUserSession(userId, teamId, token, expiresAt);
 
-                // Fix the user name access issue with a safer approach
-                // Convert the installation to a plain object first
-                const rawData = JSON.parse(JSON.stringify(installation));
-                let userName = 'Slack User'; // Default fallback
+                // Initialize default values
+                let userName = 'Slack User';
+                let teamName = installation.team?.name || 'Slack Workspace';
+                let teamIcon = null;
 
-                // Try to extract the user name from the raw data
-                if (rawData && rawData.user) {
-                    userName =
-                        rawData.user.name ||
-                        rawData.user.real_name ||
-                        (rawData.user.profile ? rawData.user.profile.real_name || rawData.user.profile.display_name : null) ||
-                        userName;
+                // Convert the installation to a plain object
+                const rawData = JSON.parse(JSON.stringify(installation));
+
+                // Try to get team icon if available
+                if (rawData.team && rawData.team.icons) {
+                    teamIcon =
+                        rawData.team.icons.image_132 ||
+                        rawData.team.icons.image_68 ||
+                        rawData.team.icons.image_44 ||
+                        null;
+                }
+
+                try {
+                    // Use the user token to get profile information
+                    if (installation.user?.token) {
+                        const client = new WebClient(installation.user.token);
+                        const userInfo = await client.users.info({
+                            user: userId
+                        });
+
+                        console.log('Fetched user profile:', JSON.stringify(userInfo.user, null, 2));
+
+                        if (userInfo.user) {
+                            // Extract user name from fetched profile
+                            userName =
+                                userInfo.user.real_name ||
+                                userInfo.user.name ||
+                                (userInfo.user.profile ?
+                                    userInfo.user.profile.real_name ||
+                                    userInfo.user.profile.display_name :
+                                    null) ||
+                                userName;
+
+                            console.log(`Using fetched user name: ${userName}`);
+                        }
+                    }
+                } catch (profileError) {
+                    console.error('Error fetching user profile:', profileError);
+                    // Continue with default name if profile fetch fails
                 }
 
                 // Encode the user info and token to pass to frontend
@@ -154,6 +221,8 @@ app.get('/auth/slack/callback', async (req, res) => {
                     userId,
                     teamId,
                     userName,
+                    teamName,
+                    teamIcon,
                     expiresAt: expiresAt.toISOString()
                 };
 

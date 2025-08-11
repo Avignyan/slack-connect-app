@@ -8,6 +8,7 @@ import {
     cancelScheduledMessage,
     logout,
 } from '../controllers/slackController.js';
+
 import { authenticate } from '../middleware/authMiddleware.js';
 
 const router = Router();
@@ -22,5 +23,9 @@ router.post('/schedule-message', authenticate, scheduleMessage);
 router.get('/scheduled-messages', authenticate, getScheduledMessages);
 router.delete('/scheduled-messages/:id', authenticate, cancelScheduledMessage);
 router.post('/logout', authenticate, logout);
+
+// New workspace management routes
+//router.get('/workspaces', authenticate, getWorkspaces);
+//router.post('/workspaces/switch', authenticate, switchWorkspace);
 
 export default router;
