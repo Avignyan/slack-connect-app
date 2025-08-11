@@ -1,0 +1,13 @@
+[build]
+  base = "backend"
+  command = "npm install && npx prisma generate && npm run build"
+  functions = "netlify/functions"
+  publish = "public"
+
+[functions]
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200

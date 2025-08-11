@@ -116,7 +116,6 @@ const installer = new InstallProvider({
 });
 
 const app = express();
-const port = process.env.PORT || 8000;
 
 app.use(cors());
 app.use(express.json());
@@ -305,7 +304,18 @@ app.get('/', (req, res) => {
 
 app.use('/api', apiRoutes);
 
-app.listen(port, () => {
-    console.log(`[server]: Server is running at ${process.env.BACKEND_PUBLIC_URL}`);
+// Start the server only in development mode
+// In production (Netlify Functions), serverless handler will manage this
+if (process.env.NODE_ENV !== 'production') {
+    const port = process.env.PORT || 8000;
+    app.listen(port, () => {
+        console.log(`[server]: Server is running at ${process.env.BACKEND_PUBLIC_URL}`);
+        startScheduler();
+    });
+} else {
+    // In production, start the scheduler without explicitly starting the server
     startScheduler();
-});
+}
+
+// Export the Express app for Netlify Functions
+export { app };
