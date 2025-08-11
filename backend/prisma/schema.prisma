@@ -12,7 +12,7 @@ datasource db {
 model SlackInstallation {
   id                String             @id @default(cuid())
   teamId            String
-  userId            String // New field to track individual users
+  userId            String // Track individual users
   data              Json
   scheduledMessages ScheduledMessage[]
 

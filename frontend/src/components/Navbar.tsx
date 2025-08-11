@@ -1,7 +1,7 @@
 // frontend/src/components/Navbar.tsx
 import { AppBar, Toolbar, Typography, Box, IconButton } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
-import appLogo from '../assets/logo.png';
+import appLogo from '../assets/logo.svg';
 
 // Updated props to include userName
 type NavbarProps = {

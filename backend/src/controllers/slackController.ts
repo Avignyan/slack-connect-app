@@ -6,18 +6,18 @@ import * as messageRepo from '../repositories/messageRepository.js';
 import type { Installation } from '@slack/oauth';
 import crypto from 'crypto';
 
-// Updated helper for the multi-user app
-const getFirstTeamId = async () => {
-    const installation = await installationRepo.findFirstInstallation();
-    return installation?.teamId || null;
-};
-
 export const getChannels = async (req: Request, res: Response) => {
     try {
-        const teamId = await getFirstTeamId();
-        if (!teamId) return res.status(404).json({ error: 'No installation found.' });
+        // Get the authenticated user's info from the request
+        const userId = req.user?.userId;
+        const teamId = req.user?.teamId;
 
-        const token = await getValidAccessToken(teamId);
+        if (!userId || !teamId) {
+            return res.status(401).json({ error: 'User not authenticated properly.' });
+        }
+
+        // Get a valid token for this specific user and team
+        const token = await getValidAccessToken(teamId, userId);
         if (!token) return res.status(400).json({ error: 'Could not retrieve a valid token.' });
 
         const client = new WebClient(token);
@@ -39,12 +39,19 @@ export const sendMessage = async (req: Request, res: Response) => {
     }
 
     try {
-        const teamId = await getFirstTeamId();
-        if (!teamId) return res.status(404).json({ error: 'No installation found.' });
+        // Get the authenticated user's info from the request
+        const userId = req.user?.userId;
+        const teamId = req.user?.teamId;
 
-        // Using findInstallationByTeamId instead of findInstallationByTeamAndUser
-        const installation = await installationRepo.findInstallationByTeamId(teamId);
-        if (!installation) return res.status(404).json({ error: 'Installation not found for team.' });
+        if (!userId || !teamId) {
+            return res.status(401).json({ error: 'User not authenticated properly.' });
+        }
+
+        // Find the specific installation for this user
+        const installation = await installationRepo.findInstallationByTeamIdAndUserId(teamId, userId);
+        if (!installation) {
+            return res.status(404).json({ error: 'Installation not found for user.' });
+        }
 
         const installationData = installation.data as unknown as Installation;
 
@@ -74,8 +81,19 @@ export const sendMessage = async (req: Request, res: Response) => {
 export const scheduleMessage = async (req: Request, res: Response) => {
     const { channelId, message, sendAt, sendAsUser } = req.body;
     try {
-        const installation = await installationRepo.findFirstInstallation();
-        if (!installation) return res.status(404).json({ error: 'No installation found.' });
+        // Get the authenticated user's info
+        const userId = req.user?.userId;
+        const teamId = req.user?.teamId;
+
+        if (!userId || !teamId) {
+            return res.status(401).json({ error: 'User not authenticated properly.' });
+        }
+
+        // Find the specific installation for this user
+        const installation = await installationRepo.findInstallationByTeamIdAndUserId(teamId, userId);
+        if (!installation) {
+            return res.status(404).json({ error: 'Installation not found for user.' });
+        }
 
         await messageRepo.createScheduledMessage(
             channelId,
@@ -93,8 +111,19 @@ export const scheduleMessage = async (req: Request, res: Response) => {
 
 export const getScheduledMessages = async (req: Request, res: Response) => {
     try {
-        const installation = await installationRepo.findFirstInstallation();
-        if (!installation) return res.status(404).json({ error: 'No messages found.' });
+        // Get the authenticated user's info
+        const userId = req.user?.userId;
+        const teamId = req.user?.teamId;
+
+        if (!userId || !teamId) {
+            return res.status(401).json({ error: 'User not authenticated properly.' });
+        }
+
+        // Find the specific installation for this user
+        const installation = await installationRepo.findInstallationByTeamIdAndUserId(teamId, userId);
+        if (!installation) {
+            return res.status(404).json({ error: 'No installation found for user.' });
+        }
 
         const messages = await messageRepo.findPendingMessagesByInstallationId(installation.id);
         res.json(messages);
@@ -107,6 +136,29 @@ export const getScheduledMessages = async (req: Request, res: Response) => {
 export const cancelScheduledMessage = async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
+        // First verify that this message belongs to the authenticated user
+        const userId = req.user?.userId;
+        const teamId = req.user?.teamId;
+
+        if (!userId || !teamId) {
+            return res.status(401).json({ error: 'User not authenticated properly.' });
+        }
+
+        const installation = await installationRepo.findInstallationByTeamIdAndUserId(teamId, userId);
+        if (!installation) {
+            return res.status(404).json({ error: 'Installation not found for user.' });
+        }
+
+        // Get the message and check if it belongs to this user's installation
+        const message = await messageRepo.findScheduledMessageById(id);
+        if (!message) {
+            return res.status(404).json({ error: 'Message not found.' });
+        }
+
+        if (message.installationId !== installation.id) {
+            return res.status(403).json({ error: 'You are not authorized to cancel this message.' });
+        }
+
         await messageRepo.deleteScheduledMessageById(id);
         res.status(200).json({ success: true, message: 'Message cancelled successfully.' });
     } catch (error) {
@@ -117,16 +169,31 @@ export const cancelScheduledMessage = async (req: Request, res: Response) => {
 
 export const logout = async (req: Request, res: Response) => {
     try {
-        const installation = await installationRepo.findFirstInstallation();
+        // Get the authenticated user's info
+        const userId = req.user?.userId;
+        const teamId = req.user?.teamId;
+
+        if (!userId || !teamId) {
+            return res.status(401).json({ error: 'User not authenticated properly.' });
+        }
+
+        // Find the specific installation for this user
+        const installation = await installationRepo.findInstallationByTeamIdAndUserId(teamId, userId);
         if (!installation) {
-            return res.status(404).json({ error: 'No installation found to logout.' });
+            return res.status(404).json({ error: 'No installation found for user.' });
         }
 
         // 1. Delete all child records (scheduled messages) first
         await messageRepo.deleteMessagesByInstallationId(installation.id);
 
-        // 2. Delete the parent record (the installation)
-        await installationRepo.deleteInstallationByTeamId(installation.teamId);
+        // 2. Delete the specific user's installation
+        await installationRepo.deleteInstallationByTeamIdAndUserId(teamId, userId);
+
+        // 3. Delete the user's session
+        if (req.headers.authorization) {
+            const token = req.headers.authorization.split(' ')[1];
+            await installationRepo.deleteSession(token);
+        }
 
         res.status(200).json({ success: true, message: 'Successfully logged out.' });
     } catch (error) {
