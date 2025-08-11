@@ -45,7 +45,7 @@ type DashboardPageProps = {
  */
 const DashboardPage = ({ userInfo }: DashboardPageProps) => {
     // Backend API URL
-    const backendUrl = 'https://avigyan-slack-scheduler.loca.lt';
+    const backendUrl = 'https://slack-connect-ap.netlify.app/.netlify/functions/api';
 
     // State management
     const [channels, setChannels] = useState<SlackChannel[]>([]);
