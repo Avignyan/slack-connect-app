@@ -1,32 +1,34 @@
-// frontend/src/App.tsx
 import { useState, useEffect } from 'react';
 import { Box, CircularProgress, CssBaseline } from '@mui/material';
 import Navbar from './components/Navbar';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 
-// Define the user info type
-// Update the UserInfo interface in App.tsx
+// Define the user info type with channels included
 export interface UserInfo {
     token: string;
     userId: string;
     teamId: string;
     userName?: string;
-    teamName?: string;  // Make sure this is included
-    teamIcon?: string;  // And this too if you want to use it
+    teamName?: string;
+    teamIcon?: string;
     expiresAt?: string;
+    channels?: any[]; // Add channels to store them from OAuth
+    accessToken?: string; // For backward compatibility
 }
 
 function App() {
+    // This is the correct backendUrl - keep this
     const backendUrl = 'https://slack-connect-ap.netlify.app/.netlify/functions/api';
     const [isConnected, setIsConnected] = useState<boolean | null>(null);
     const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        // First check if there's userInfo in the URL parameters (from OAuth callback)
+        // First check if there's userInfo or auth=success in the URL parameters
         const params = new URLSearchParams(window.location.search);
         const userInfoParam = params.get('userInfo');
+        const authStatus = params.get('auth');
 
         if (userInfoParam) {
             try {
@@ -34,6 +36,12 @@ function App() {
                 window.history.replaceState({}, document.title, window.location.pathname);
 
                 const parsedUserInfo = JSON.parse(decodeURIComponent(userInfoParam)) as UserInfo;
+
+                // Ensure token is set correctly (might be in accessToken)
+                if (!parsedUserInfo.token && parsedUserInfo.accessToken) {
+                    parsedUserInfo.token = parsedUserInfo.accessToken;
+                }
+
                 setUserInfo(parsedUserInfo);
                 setIsConnected(true);
                 setIsLoading(false);
@@ -51,6 +59,11 @@ function App() {
         if (storedUserInfo) {
             try {
                 const parsedUserInfo = JSON.parse(storedUserInfo) as UserInfo;
+
+                // Ensure token is set correctly (might be in accessToken)
+                if (!parsedUserInfo.token && parsedUserInfo.accessToken) {
+                    parsedUserInfo.token = parsedUserInfo.accessToken;
+                }
 
                 // Check if token is expired
                 if (parsedUserInfo.expiresAt) {
@@ -78,9 +91,11 @@ function App() {
                 // Check if the stored token is valid
                 if (storedUserInfo) {
                     const parsedUserInfo = JSON.parse(storedUserInfo) as UserInfo;
-                    const response = await fetch(`${backendUrl}/api/channels`, {
+
+                    // FIX: Remove the duplicate /api from the path
+                    const response = await fetch(`${backendUrl}/channels`, {
                         headers: {
-                            'Authorization': `Bearer ${parsedUserInfo.token}`
+                            'Authorization': `Bearer ${parsedUserInfo.token || parsedUserInfo.accessToken}`
                         }
                     });
 
@@ -90,8 +105,15 @@ function App() {
                         localStorage.removeItem('userInfo');
                         setIsConnected(false);
                     } else {
+                        // If channels request succeeds, store the channels too
+                        const channels = await response.json();
+                        parsedUserInfo.channels = channels;
+
                         setUserInfo(parsedUserInfo);
                         setIsConnected(true);
+
+                        // Update localStorage with channels
+                        localStorage.setItem('userInfo', JSON.stringify(parsedUserInfo));
                     }
                 } else {
                     setIsConnected(false);
@@ -111,11 +133,12 @@ function App() {
         if (!window.confirm('Are you sure you want to disconnect your workspace?')) return;
 
         try {
-            const response = await fetch(`${backendUrl}/api/logout`, {
+            // FIX: Remove the duplicate /api from the path
+            const response = await fetch(`${backendUrl}/logout`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${userInfo?.token || ''}`
+                    'Authorization': `Bearer ${userInfo?.token || userInfo?.accessToken || ''}`
                 }
             });
 
@@ -154,8 +177,6 @@ function App() {
         }
     };
 
-
-
     if (isLoading) {
         return (
             <>
@@ -163,9 +184,9 @@ function App() {
                 <Navbar
                     isConnected={null}
                     onLogout={handleLogout}
-                    userName={undefined}  // Changed from null to undefined
-                    teamName={undefined}  // Changed from null to undefined
-                    teamIcon={undefined}  // Changed from null to undefined
+                    userName={undefined}
+                    teamName={undefined}
+                    teamIcon={undefined}
                     userInfo={null}
                     backendUrl={backendUrl}
                 />
