@@ -15,11 +15,11 @@ RUN npx prisma generate
 # Copy the rest of the application
 COPY . .
 
-# Build the application
-RUN npm run build
-
 # Expose the port your app runs on
 EXPOSE 8000
 
-# Start the application
-CMD ["node", "dist/index.js"]
+# Set NODE_ENV
+ENV NODE_ENV=production
+
+# Start the application in dev mode (which includes dotenv loading)
+CMD ["npm", "run", "dev"]
