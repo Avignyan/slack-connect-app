@@ -1,57 +1,89 @@
-const express = require('express');
-const serverless = require('serverless-http');
 const axios = require('axios');
-const cors = require('cors');
-require('dotenv').config();
 
-// Create Express app
-const app = express();
+// Simple path router for serverless functions
+const router = {
+    '/': handleRoot,
+    '/slack/install': handleSlackInstall,
+    '/auth/slack/callback': handleSlackCallback,
+    '/channels': handleChannels,
+    '/scheduled-messages': handleScheduledMessages,
+    '/logout': handleLogout
+};
 
-// CORS configuration - specify allowed origins
-app.use(cors({
-    origin: ['https://slack-connect-app-coral.vercel.app', 'https://avigyan-slack-scheduler.vercel.app', 'http://localhost:3000'],
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
-}));
+// Main handler function
+exports.handler = async (event, context) => {
+    console.log(`Request path: ${event.path}`);
+    console.log(`Request method: ${event.httpMethod}`);
 
-// Handle OPTIONS requests explicitly for CORS preflight
-app.options('*', cors());
+    // Extract path from the full path (removing /.netlify/functions/api)
+    const path = event.path.replace('/.netlify/functions/api', '') || '/';
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+    // Find handler for this path
+    const handler = router[path];
 
-// Debugging middleware to log all requests
-app.use((req, res, next) => {
-    console.log(`Request received: ${req.method} ${req.originalUrl}`);
-    next();
-});
+    // Handle CORS preflight requests
+    if (event.httpMethod === 'OPTIONS') {
+        return {
+            statusCode: 204,
+            headers: getCorsHeaders(),
+            body: ''
+        };
+    }
 
-// Root endpoint for testing
-app.get('/', (req, res) => {
-    res.send('Slack OAuth API is running');
-});
+    // Execute handler if found, otherwise return 404
+    if (handler) {
+        try {
+            return await handler(event, context);
+        } catch (error) {
+            console.error(`Error handling ${path}:`, error);
+            return {
+                statusCode: 500,
+                headers: getCorsHeaders(),
+                body: JSON.stringify({ error: error.message })
+            };
+        }
+    } else {
+        return {
+            statusCode: 404,
+            headers: getCorsHeaders(),
+            body: JSON.stringify({ error: 'Not found' })
+        };
+    }
+};
 
-// Add to Slack button redirect
-app.get('/slack/install', (req, res) => {
-    console.log('Slack install route hit');
+// Root endpoint handler
+async function handleRoot(event) {
+    return {
+        statusCode: 200,
+        headers: getCorsHeaders(),
+        body: 'Slack OAuth API is running'
+    };
+}
+
+// Slack install handler
+async function handleSlackInstall(event) {
     const clientId = process.env.SLACK_CLIENT_ID;
     const redirectUri = 'https://slack-connect-ap.netlify.app/.netlify/functions/api/auth/slack/callback';
-    // Expanded scope to include more permissions
     const scope = 'channels:read,channels:history,chat:write,users:read,users.profile:read,users:read.email,team:read';
 
     const slackAuthUrl = `https://slack.com/oauth/v2/authorize?client_id=${clientId}&scope=${scope}&redirect_uri=${encodeURIComponent(redirectUri)}`;
-    console.log(`Redirecting to: ${slackAuthUrl}`);
-    res.redirect(slackAuthUrl);
-});
 
-// The critical callback route
-app.get('/auth/slack/callback', async (req, res) => {
-    console.log('Callback route hit with code:', req.query.code);
+    return {
+        statusCode: 302,
+        headers: {
+            ...getCorsHeaders(),
+            Location: slackAuthUrl
+        },
+        body: ''
+    };
+}
+
+// Slack callback handler
+async function handleSlackCallback(event) {
     try {
-        const code = req.query.code;
+        const code = event.queryStringParameters?.code;
         if (!code) {
-            throw new Error('No code provided');
+            return redirectToFrontend({ auth: 'error', message: 'No code provided' });
         }
 
         // Exchange code for token
@@ -69,10 +101,10 @@ app.get('/auth/slack/callback', async (req, res) => {
         });
 
         if (!response.data.ok) {
-            throw new Error(`Slack error: ${response.data.error}`);
+            return redirectToFrontend({ auth: 'error', message: response.data.error });
         }
 
-        // Get user details from Slack API
+        // Get user details
         const userResponse = await axios.get('https://slack.com/api/users.info', {
             params: {
                 user: response.data.authed_user.id
@@ -103,23 +135,29 @@ app.get('/auth/slack/callback', async (req, res) => {
             channels: channelsResponse.data.ok ? channelsResponse.data.channels : []
         };
 
-        // Update frontend URL to match your latest deployment
-        const frontendUrl = 'https://slack-connect-app-coral.vercel.app';
-        res.redirect(`${frontendUrl}?auth=success&userData=${encodeURIComponent(JSON.stringify(userData))}`);
+        return redirectToFrontend({
+            auth: 'success',
+            userData: JSON.stringify(userData)
+        });
     } catch (error) {
         console.error('Slack OAuth error:', error);
-        // Update frontend URL to match your latest deployment
-        const frontendUrl = 'https://slack-connect-app-coral.vercel.app';
-        res.redirect(`${frontendUrl}?auth=error&message=${encodeURIComponent(error.message)}`);
+        return redirectToFrontend({
+            auth: 'error',
+            message: error.message
+        });
     }
-});
+}
 
-// Add API endpoints for the frontend to use
-app.get('/channels', async (req, res) => {
+// Channels handler
+async function handleChannels(event) {
     try {
-        const authHeader = req.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            return res.status(401).json({ error: 'No valid authorization token provided' });
+        const authHeader = getAuthHeader(event);
+        if (!authHeader) {
+            return {
+                statusCode: 401,
+                headers: getCorsHeaders(),
+                body: JSON.stringify({ error: 'No authorization token provided' })
+            };
         }
 
         const token = authHeader.split(' ')[1];
@@ -133,36 +171,72 @@ app.get('/channels', async (req, res) => {
         });
 
         if (!response.data.ok) {
-            return res.status(400).json({ error: response.data.error });
+            return {
+                statusCode: 400,
+                headers: getCorsHeaders(),
+                body: JSON.stringify({ error: response.data.error })
+            };
         }
 
-        return res.json(response.data.channels);
+        return {
+            statusCode: 200,
+            headers: getCorsHeaders(),
+            body: JSON.stringify(response.data.channels)
+        };
     } catch (error) {
-        console.error('Error fetching channels:', error);
-        return res.status(500).json({ error: error.message });
+        return {
+            statusCode: 500,
+            headers: getCorsHeaders(),
+            body: JSON.stringify({ error: error.message })
+        };
     }
-});
+}
 
-app.get('/scheduled-messages', (req, res) => {
-    // For now, return empty array - implement actual logic later
-    res.json([]);
-});
+// Scheduled messages handler
+async function handleScheduledMessages(event) {
+    return {
+        statusCode: 200,
+        headers: getCorsHeaders(),
+        body: JSON.stringify([])
+    };
+}
 
-app.post('/logout', (req, res) => {
-    res.json({ success: true, message: 'Logged out successfully' });
-});
+// Logout handler
+async function handleLogout(event) {
+    return {
+        statusCode: 200,
+        headers: getCorsHeaders(),
+        body: JSON.stringify({ success: true })
+    };
+}
 
-// Create a wrapper for the Express app with proper path handling
-const handler = serverless(app, {
-    basePath: '/.netlify/functions/api'
-});
+// Helper function to create a frontend redirect
+function redirectToFrontend(params) {
+    const frontendUrl = 'https://slack-connect-app-coral.vercel.app';
+    const queryString = Object.keys(params)
+        .map(key => `${key}=${encodeURIComponent(params[key])}`)
+        .join('&');
 
-// Export the serverless handler
-exports.handler = async (event, context) => {
-    // For debugging
-    console.log(`Function invoked with path: ${event.path}`);
-    console.log(`Query parameters: ${JSON.stringify(event.queryStringParameters)}`);
+    return {
+        statusCode: 302,
+        headers: {
+            ...getCorsHeaders(),
+            Location: `${frontendUrl}?${queryString}`
+        },
+        body: ''
+    };
+}
 
-    // Return the processed request
-    return await handler(event, context);
-};
+// Helper to get Authorization header
+function getAuthHeader(event) {
+    return event.headers.authorization || event.headers.Authorization;
+}
+
+// Helper to create CORS headers
+function getCorsHeaders() {
+    return {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS'
+    };
+}
