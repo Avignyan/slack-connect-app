@@ -17,7 +17,17 @@ app.get('/', (req, res) => {
     res.send('Slack OAuth API is running');
 });
 
-// Initial Slack OAuth redirect
+// Add the missing /slack/install route that frontend is trying to use
+app.get('/slack/install', (req, res) => {
+    const clientId = process.env.SLACK_CLIENT_ID;
+    const redirectUri = `${process.env.NETLIFY_URL || 'https://slack-connect-ap.netlify.app'}/.netlify/functions/api/auth/slack/callback`;
+    const scope = 'channels:read,channels:history,chat:write,users:read'; // Adjust scopes as needed
+
+    const slackAuthUrl = `https://slack.com/oauth/v2/authorize?client_id=${clientId}&scope=${scope}&redirect_uri=${redirectUri}`;
+    res.redirect(slackAuthUrl);
+});
+
+// Keep the original /auth/slack route as well for flexibility
 app.get('/auth/slack', (req, res) => {
     const clientId = process.env.SLACK_CLIENT_ID;
     const redirectUri = `${process.env.NETLIFY_URL || 'https://slack-connect-ap.netlify.app'}/.netlify/functions/api/auth/slack/callback`;
@@ -27,7 +37,7 @@ app.get('/auth/slack', (req, res) => {
     res.redirect(slackAuthUrl);
 });
 
-// Slack OAuth callback - THIS IS THE MISSING ROUTE
+// Slack OAuth callback
 app.get('/auth/slack/callback', async (req, res) => {
     try {
         const code = req.query.code;
@@ -64,7 +74,7 @@ app.get('/auth/slack/callback', async (req, res) => {
         // ...
 
         // Redirect to frontend with success
-        const frontendUrl = process.env.FRONTEND_URL || 'https://your-frontend-url.com';
+        const frontendUrl = process.env.FRONTEND_URL || 'https://avigyan-slack-scheduler.vercel.app';
         const userInfo = {
             userId: response.data.authed_user.id,
             teamId: response.data.team.id,
@@ -74,7 +84,7 @@ app.get('/auth/slack/callback', async (req, res) => {
         res.redirect(`${frontendUrl}?auth=success&userInfo=${encodeURIComponent(JSON.stringify(userInfo))}`);
     } catch (error) {
         console.error('Slack OAuth error:', error);
-        const frontendUrl = process.env.FRONTEND_URL || 'https://your-frontend-url.com';
+        const frontendUrl = process.env.FRONTEND_URL || 'https://avigyan-slack-scheduler.vercel.app';
         res.redirect(`${frontendUrl}?auth=error&message=${encodeURIComponent(error.message)}`);
     }
 });
