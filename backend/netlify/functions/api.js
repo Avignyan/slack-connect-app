@@ -280,11 +280,194 @@ exports.handler = async (event, context) => {
                 };
             }
         }
+        // NEW: Handle send-message endpoint (both /send-message and /api/send-message)
+        else if (path === '/send-message' || path === '/api/send-message') {
+            console.log('Handling send-message request');
+
+            // Check authorization
+            const authHeader = event.headers.authorization || event.headers.Authorization;
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                return {
+                    statusCode: 401,
+                    headers,
+                    body: JSON.stringify({ error: 'No valid authorization token provided' })
+                };
+            }
+
+            // Parse request body
+            let requestBody;
+            try {
+                requestBody = JSON.parse(event.body);
+            } catch (error) {
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({ error: 'Invalid request body' })
+                };
+            }
+
+            // Validate request data
+            const { channelId, message, sendAsUser } = requestBody;
+            if (!channelId || !message) {
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({ error: 'Channel ID and message are required' })
+                };
+            }
+
+            // Get token from auth header
+            const token = authHeader.split(' ')[1];
+
+            try {
+                // Send message to Slack
+                const response = await axios.post(
+                    'https://slack.com/api/chat.postMessage',
+                    {
+                        channel: channelId,
+                        text: message,
+                        as_user: sendAsUser || false
+                    },
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }
+                );
+
+                if (!response.data.ok) {
+                    console.error('Slack API error:', response.data.error);
+                    return {
+                        statusCode: 400,
+                        headers,
+                        body: JSON.stringify({
+                            error: 'Failed to send message',
+                            details: response.data.error
+                        })
+                    };
+                }
+
+                return {
+                    statusCode: 200,
+                    headers,
+                    body: JSON.stringify({
+                        success: true,
+                        messageId: response.data.ts,
+                        channel: response.data.channel
+                    })
+                };
+            } catch (error) {
+                console.error('Error sending message:', error.message);
+                return {
+                    statusCode: 500,
+                    headers,
+                    body: JSON.stringify({
+                        error: 'Error sending message',
+                        message: error.message
+                    })
+                };
+            }
+        }
+        // NEW: Handle schedule-message endpoint (both /schedule-message and /api/schedule-message)
+        else if (path === '/schedule-message' || path === '/api/schedule-message') {
+            console.log('Handling schedule-message request');
+
+            // Check authorization
+            const authHeader = event.headers.authorization || event.headers.Authorization;
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                return {
+                    statusCode: 401,
+                    headers,
+                    body: JSON.stringify({ error: 'No valid authorization token provided' })
+                };
+            }
+
+            // Parse request body
+            let requestBody;
+            try {
+                requestBody = JSON.parse(event.body);
+            } catch (error) {
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({ error: 'Invalid request body' })
+                };
+            }
+
+            // Validate request data
+            const { channelId, message, sendAt, sendAsUser } = requestBody;
+            if (!channelId || !message || !sendAt) {
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({ error: 'Channel ID, message, and schedule time are required' })
+                };
+            }
+
+            // Get token from auth header
+            const token = authHeader.split(' ')[1];
+
+            try {
+                // Convert sendAt to Unix timestamp (seconds)
+                const scheduleTime = Math.floor(new Date(sendAt).getTime() / 1000);
+
+                // Schedule message through Slack API
+                const response = await axios.post(
+                    'https://slack.com/api/chat.scheduleMessage',
+                    {
+                        channel: channelId,
+                        text: message,
+                        post_at: scheduleTime,
+                        as_user: sendAsUser || false
+                    },
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }
+                );
+
+                if (!response.data.ok) {
+                    console.error('Slack API error:', response.data.error);
+                    return {
+                        statusCode: 400,
+                        headers,
+                        body: JSON.stringify({
+                            error: 'Failed to schedule message',
+                            details: response.data.error
+                        })
+                    };
+                }
+
+                return {
+                    statusCode: 200,
+                    headers,
+                    body: JSON.stringify({
+                        success: true,
+                        scheduledMessageId: response.data.scheduled_message_id,
+                        channel: response.data.channel,
+                        postAt: response.data.post_at
+                    })
+                };
+            } catch (error) {
+                console.error('Error scheduling message:', error.message);
+                return {
+                    statusCode: 500,
+                    headers,
+                    body: JSON.stringify({
+                        error: 'Error scheduling message',
+                        message: error.message
+                    })
+                };
+            }
+        }
         // Handle both /scheduled-messages and /api/scheduled-messages
         else if (path === '/scheduled-messages' || path === '/api/scheduled-messages' ||
             path === '/api/sch-messages' || path === '/sch-messages') {
-            // Placeholder for scheduled messages endpoint
-            console.log('Handling scheduled-messages route');
+            // Get scheduled messages
+            console.log('Handling scheduled-messages GET route');
 
             const authHeader = event.headers.authorization || event.headers.Authorization;
             if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -295,12 +478,157 @@ exports.handler = async (event, context) => {
                 };
             }
 
-            // For now, just return an empty array - implement proper storage later
-            return {
-                statusCode: 200,
-                headers,
-                body: JSON.stringify([])
-            };
+            const token = authHeader.split(' ')[1];
+
+            try {
+                // Fetch scheduled messages from Slack API
+                const response = await axios.get('https://slack.com/api/chat.scheduledMessages.list', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.data.ok) {
+                    console.error('Slack API error:', response.data.error);
+                    return {
+                        statusCode: 400,
+                        headers,
+                        body: JSON.stringify({
+                            error: 'Failed to fetch scheduled messages',
+                            details: response.data.error
+                        })
+                    };
+                }
+
+                // Format the response
+                const scheduledMessages = response.data.scheduled_messages.map(msg => ({
+                    id: msg.id,
+                    channelId: msg.channel_id,
+                    message: msg.text,
+                    sendAt: new Date(msg.post_at * 1000).toISOString()
+                }));
+
+                return {
+                    statusCode: 200,
+                    headers,
+                    body: JSON.stringify(scheduledMessages)
+                };
+            } catch (error) {
+                console.error('Error fetching scheduled messages:', error.message);
+                return {
+                    statusCode: 500,
+                    headers,
+                    body: JSON.stringify({
+                        error: 'Error fetching scheduled messages',
+                        message: error.message
+                    })
+                };
+            }
+        }
+        // NEW: Handle deletion of scheduled messages
+        else if (path.match(/\/scheduled-messages\/[\w-]+$/) || path.match(/\/api\/scheduled-messages\/[\w-]+$/)) {
+            // Handle DELETE requests to cancel scheduled messages
+            if (event.httpMethod === 'DELETE') {
+                console.log('Handling scheduled-message DELETE route');
+
+                const authHeader = event.headers.authorization || event.headers.Authorization;
+                if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                    return {
+                        statusCode: 401,
+                        headers,
+                        body: JSON.stringify({ error: 'No valid authorization token provided' })
+                    };
+                }
+
+                const token = authHeader.split(' ')[1];
+
+                // Extract message ID from path
+                const messageId = path.split('/').pop();
+
+                try {
+                    // Extract channel ID - for this we need to first get the message details
+                    const listResponse = await axios.get('https://slack.com/api/chat.scheduledMessages.list', {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+
+                    if (!listResponse.data.ok) {
+                        console.error('Slack API error:', listResponse.data.error);
+                        return {
+                            statusCode: 400,
+                            headers,
+                            body: JSON.stringify({
+                                error: 'Failed to list scheduled messages',
+                                details: listResponse.data.error
+                            })
+                        };
+                    }
+
+                    // Find the message to get its channel ID
+                    const targetMessage = listResponse.data.scheduled_messages.find(msg => msg.id === messageId);
+                    if (!targetMessage) {
+                        return {
+                            statusCode: 404,
+                            headers,
+                            body: JSON.stringify({ error: 'Scheduled message not found' })
+                        };
+                    }
+
+                    // Now we can delete the message
+                    const deleteResponse = await axios.post(
+                        'https://slack.com/api/chat.deleteScheduledMessage',
+                        {
+                            channel: targetMessage.channel_id,
+                            scheduled_message_id: messageId
+                        },
+                        {
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            }
+                        }
+                    );
+
+                    if (!deleteResponse.data.ok) {
+                        console.error('Slack API error:', deleteResponse.data.error);
+                        return {
+                            statusCode: 400,
+                            headers,
+                            body: JSON.stringify({
+                                error: 'Failed to delete scheduled message',
+                                details: deleteResponse.data.error
+                            })
+                        };
+                    }
+
+                    return {
+                        statusCode: 200,
+                        headers,
+                        body: JSON.stringify({
+                            success: true,
+                            messageId: messageId
+                        })
+                    };
+                } catch (error) {
+                    console.error('Error deleting scheduled message:', error.message);
+                    return {
+                        statusCode: 500,
+                        headers,
+                        body: JSON.stringify({
+                            error: 'Error deleting scheduled message',
+                            message: error.message
+                        })
+                    };
+                }
+            } else {
+                // For non-DELETE requests to this path
+                return {
+                    statusCode: 405, // Method Not Allowed
+                    headers,
+                    body: JSON.stringify({ error: 'Method not allowed' })
+                };
+            }
         }
         // Handle logout
         else if (path === '/logout' || path === '/api/logout') {
