@@ -100,7 +100,8 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
     const fetchScheduledMessages = useCallback(async () => {
         try {
             setRefreshing(true);
-            const response = await authFetch(`${backendUrl}/api/scheduled-messages`);
+            // FIXED: Removed duplicate /api from path
+            const response = await authFetch(`${backendUrl}/scheduled-messages`);
 
             if (!response.ok) {
                 throw new Error(`Server responded with status: ${response.status}`);
@@ -124,7 +125,8 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
     useEffect(() => {
         const fetchChannels = async () => {
             try {
-                const response = await authFetch(`${backendUrl}/api/channels`);
+                // FIXED: Removed duplicate /api from path
+                const response = await authFetch(`${backendUrl}/channels`);
 
                 if (!response.ok) {
                     throw new Error(`Server responded with status: ${response.status}`);
@@ -175,7 +177,8 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
 
         try {
             setLoading(true);
-            const response = await authFetch(`${backendUrl}/api/send-message`, {
+            // FIXED: Removed duplicate /api from path
+            const response = await authFetch(`${backendUrl}/send-message`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -216,7 +219,8 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
 
         try {
             setLoading(true);
-            const response = await authFetch(`${backendUrl}/api/schedule-message`, {
+            // FIXED: Removed duplicate /api from path
+            const response = await authFetch(`${backendUrl}/schedule-message`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -260,7 +264,8 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
         if (!window.confirm('Are you sure you want to cancel this scheduled message?')) return;
 
         try {
-            const response = await authFetch(`${backendUrl}/api/scheduled-messages/${id}`, {
+            // FIXED: Removed duplicate /api from path
+            const response = await authFetch(`${backendUrl}/scheduled-messages/${id}`, {
                 method: 'DELETE',
             });
 
