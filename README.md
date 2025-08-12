@@ -289,10 +289,6 @@ The application leverages Slack's native scheduled messages API:
 - Analytics for message engagement
 - Multi-workspace support
 
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
 ## Contact
 
 Avignyan - [GitHub](https://github.com/Avignyan)
@@ -302,4 +298,3 @@ Project Link: [https://github.com/Avignyan/slack-connect-app](https://github.com
 ---
 Last updated: 2025-08-12 00:21:12 (UTC)  
 by Avignyan
-```
