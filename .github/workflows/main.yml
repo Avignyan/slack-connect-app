@@ -14,7 +14,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js v18
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18.x'
@@ -22,14 +22,22 @@ jobs:
 
       # --- Backend Checks ---
       - name: Install Backend Dependencies
-        run: cd backend && npm install
+        working-directory: backend
+        run: npm install
+
       - name: Lint Backend Code
-        run: cd backend && npm run lint
+        working-directory: backend
+        run: npm run lint
 
       # --- Frontend Checks ---
       - name: Install Frontend Dependencies
-        run: cd frontend && npm install
+        working-directory: frontend
+        run: npm install
+
       - name: Lint Frontend Code
-        run: cd frontend && npm run lint
+        working-directory: frontend
+        run: npm run lint
+
       - name: Build Frontend for Production
-        run: cd frontend && npm run build
+        working-directory: frontend
+        run: npm run build
