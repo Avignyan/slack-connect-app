@@ -15,6 +15,8 @@ export interface UserInfo {
     expiresAt?: string;
     channels?: any[]; // Add channels to store them from OAuth
     accessToken?: string; // For backward compatibility
+    userToken?: string; // Added for user token support
+    botToken?: string; // Added for explicit bot token support
 }
 
 function App() {
@@ -28,7 +30,7 @@ function App() {
         // First check if there's userInfo or auth=success in the URL parameters
         const params = new URLSearchParams(window.location.search);
         const userInfoParam = params.get('userInfo');
-        const authStatus = params.get('auth');
+        //const authStatus = params.get('auth');
 
         if (userInfoParam) {
             try {
@@ -41,6 +43,17 @@ function App() {
                 if (!parsedUserInfo.token && parsedUserInfo.accessToken) {
                     parsedUserInfo.token = parsedUserInfo.accessToken;
                 }
+
+                // Ensure botToken is set (for backward compatibility)
+                if (!parsedUserInfo.botToken) {
+                    parsedUserInfo.botToken = parsedUserInfo.token;
+                }
+
+                console.log('Auth tokens available:', {
+                    mainToken: !!parsedUserInfo.token,
+                    userToken: !!parsedUserInfo.userToken,
+                    botToken: !!parsedUserInfo.botToken
+                });
 
                 setUserInfo(parsedUserInfo);
                 setIsConnected(true);
@@ -63,6 +76,11 @@ function App() {
                 // Ensure token is set correctly (might be in accessToken)
                 if (!parsedUserInfo.token && parsedUserInfo.accessToken) {
                     parsedUserInfo.token = parsedUserInfo.accessToken;
+                }
+
+                // Ensure botToken is set (for backward compatibility)
+                if (!parsedUserInfo.botToken) {
+                    parsedUserInfo.botToken = parsedUserInfo.token;
                 }
 
                 // Check if token is expired
@@ -157,6 +175,22 @@ function App() {
     };
 
     const handleLoginSuccess = (newUserInfo: UserInfo) => {
+        // Ensure token is set correctly (might be in accessToken)
+        if (!newUserInfo.token && newUserInfo.accessToken) {
+            newUserInfo.token = newUserInfo.accessToken;
+        }
+
+        // Ensure botToken is set (for backward compatibility)
+        if (!newUserInfo.botToken) {
+            newUserInfo.botToken = newUserInfo.token;
+        }
+
+        console.log('Auth tokens available:', {
+            mainToken: !!newUserInfo.token,
+            userToken: !!newUserInfo.userToken,
+            botToken: !!newUserInfo.botToken
+        });
+
         // Save to localStorage and update state
         localStorage.setItem('userInfo', JSON.stringify(newUserInfo));
         setUserInfo(newUserInfo);

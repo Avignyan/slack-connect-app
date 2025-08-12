@@ -10,7 +10,7 @@
  * - Scheduled message management (view/cancel)
  *
  * @author Avignyan
- * @lastUpdated 2025-08-11
+ * @lastUpdated 2025-08-12
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -76,12 +76,29 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
      * Helper for authenticated fetch requests
      * Automatically adds authorization header with user token
      */
+    /**
+     * Helper for authenticated fetch requests
+     * Automatically adds authorization header with user token
+     */
     const authFetch = async (url: string, options: RequestInit = {}) => {
         try {
-            const headers = {
-                ...options.headers,
-                'Authorization': `Bearer ${userInfo?.token || ''}`,
-            };
+            // Create headers object with proper type casting
+            const headers = new Headers(options.headers || {});
+
+            // Set the Authorization header
+            headers.set('Authorization', `Bearer ${userInfo?.token || ''}`);
+
+            // If sending as user/bot and token is available, include it
+            if (url.includes('/send-message') || url.includes('/schedule-message')) {
+                const body = options.body ? JSON.parse(options.body as string) : {};
+                if (body.sendAsUser && userInfo?.userToken) {
+                    headers.set('X-User-Token', userInfo.userToken);
+                    console.log('Using user token for request');
+                } else if (!body.sendAsUser && userInfo?.botToken) {
+                    headers.set('X-Bot-Token', userInfo.botToken);
+                    console.log('Using bot token for request');
+                }
+            }
 
             return fetch(url, {
                 ...options,
@@ -197,7 +214,7 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
                 setMessage('');
             } else {
                 const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || 'Failed to send message');
+                throw new Error(errorData.error || errorData.message || 'Failed to send message');
             }
         } catch (error) {
             console.error('Error sending message:', error);
@@ -219,6 +236,11 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
 
         try {
             setLoading(true);
+
+            // Convert the date string to a Date object
+            const scheduledDate = new Date(scheduleDate);
+            console.log('Scheduling for time (local):', scheduledDate.toString());
+
             // FIXED: Removed duplicate /api from path
             const response = await authFetch(`${backendUrl}/schedule-message`, {
                 method: 'POST',
@@ -226,7 +248,7 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
                 body: JSON.stringify({
                     channelId: selectedChannel,
                     message,
-                    sendAt: scheduleDate,
+                    sendAt: scheduledDate.toISOString(), // Send as ISO string to preserve timezone
                     sendAsUser: sendAsUser
                 }),
             });
@@ -242,7 +264,7 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
                 fetchScheduledMessages(); // Refresh list after scheduling
             } else {
                 const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || 'Failed to schedule message');
+                throw new Error(errorData.error || errorData.message || 'Failed to schedule message');
             }
         } catch (error) {
             console.error('Error scheduling message:', error);
@@ -281,7 +303,7 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
                 });
             } else {
                 const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || 'Failed to cancel message');
+                throw new Error(errorData.error || errorData.message || 'Failed to cancel message');
             }
         } catch (error) {
             console.error('Error cancelling message:', error);
@@ -496,7 +518,11 @@ const DashboardPage = ({ userInfo }: DashboardPageProps) => {
                                     color="primary"
                                 />
                             }
-                            label="Send as myself (instead of as the bot)"
+                            label={
+                                <Box component="span">
+                                    Send as myself {!userInfo?.userToken && <span style={{color: 'red'}}>(requires reconnect)</span>}
+                                </Box>
+                            }
                             sx={{ mb: 3, display: 'block' }}
                         />
 

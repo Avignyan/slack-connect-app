@@ -13,7 +13,7 @@ exports.handler = async (event, context) => {
     // Standard CORS headers for all responses
     const headers = {
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-Token, X-Bot-Token',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
         'Pragma': 'no-cache',
@@ -166,15 +166,21 @@ exports.handler = async (event, context) => {
                     console.error('Error fetching channels:', err.message);
                 }
 
-                // Prepare user info for frontend
+                // Log available tokens
+                console.log('Available tokens:');
+                console.log(`- Main/Bot token: ${!!response.data.access_token}`);
+                console.log(`- User token: ${!!response.data.authed_user.access_token}`);
+
+                // Prepare user info for frontend - STORE BOTH TOKENS
                 const userInfo = {
                     userId: response.data.authed_user.id,
                     teamId: response.data.team.id,
                     teamName: response.data.team.name,
                     teamIcon: response.data.team.image_132 || response.data.team.image_230,
                     userName: userName,
-                    token: response.data.access_token,
-                    accessToken: response.data.access_token, // For backwards compatibility
+                    token: response.data.access_token, // Main token (bot token)
+                    botToken: response.data.access_token, // Explicitly name it botToken
+                    userToken: response.data.authed_user.access_token, // User token - IMPORTANT!
                     channels: channels, // Include channels in user info
                     // Set token expiry to 12 hours from now
                     expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
@@ -317,10 +323,33 @@ exports.handler = async (event, context) => {
             }
 
             // Get token from auth header
-            const token = authHeader.split(' ')[1];
+            let token = authHeader.split(' ')[1];
+
+            // Check if custom token headers are available
+            if (sendAsUser) {
+                // For "send as user", check for user token in custom header
+                const userToken = event.headers['x-user-token'] || event.headers['X-User-Token'];
+                if (userToken) {
+                    token = userToken;
+                    console.log('Using user token from X-User-Token header');
+                } else {
+                    console.log('No user token provided, using default token');
+                }
+            } else {
+                // For "send as bot", check for bot token in custom header
+                const botToken = event.headers['x-bot-token'] || event.headers['X-Bot-Token'];
+                if (botToken) {
+                    token = botToken;
+                    console.log('Using bot token from X-Bot-Token header');
+                } else {
+                    console.log('No bot token provided, using default token');
+                }
+            }
 
             try {
                 // Send message to Slack
+                console.log('Sending message as:', sendAsUser ? 'user' : 'bot');
+
                 const response = await axios.post(
                     'https://slack.com/api/chat.postMessage',
                     {
@@ -354,7 +383,8 @@ exports.handler = async (event, context) => {
                     body: JSON.stringify({
                         success: true,
                         messageId: response.data.ts,
-                        channel: response.data.channel
+                        channel: response.data.channel,
+                        sentAs: sendAsUser ? 'user' : 'bot'
                     })
                 };
             } catch (error) {
@@ -406,11 +436,44 @@ exports.handler = async (event, context) => {
             }
 
             // Get token from auth header
-            const token = authHeader.split(' ')[1];
+            let token = authHeader.split(' ')[1];
+
+            // Check if custom token headers are available
+            if (sendAsUser) {
+                // For "send as user", check for user token in custom header
+                const userToken = event.headers['x-user-token'] || event.headers['X-User-Token'];
+                if (userToken) {
+                    token = userToken;
+                    console.log('Using user token from X-User-Token header');
+                } else {
+                    console.log('No user token provided, using default token');
+                }
+            } else {
+                // For "send as bot", check for bot token in custom header
+                const botToken = event.headers['x-bot-token'] || event.headers['X-Bot-Token'];
+                if (botToken) {
+                    token = botToken;
+                    console.log('Using bot token from X-Bot-Token header');
+                } else {
+                    console.log('No bot token provided, using default token');
+                }
+            }
 
             try {
-                // Convert sendAt to Unix timestamp (seconds)
-                const scheduleTime = Math.floor(new Date(sendAt).getTime() / 1000);
+                // Parse the date string and respect timezone
+                const clientDate = new Date(sendAt);
+                console.log('Original schedule time (client):', clientDate.toString());
+                console.log('ISO time:', clientDate.toISOString());
+
+                // Convert to Unix timestamp in seconds for Slack API
+                // Use timestamp divided by 1000 to get seconds from milliseconds
+                const scheduledTime = Math.floor(clientDate.getTime() / 1000);
+
+                console.log('Schedule time details:');
+                console.log('- Time in seconds (Unix):', scheduledTime);
+                console.log('- As UTC time:', new Date(scheduledTime * 1000).toUTCString());
+                console.log('- As ISO string:', new Date(scheduledTime * 1000).toISOString());
+                console.log('Sending message as:', sendAsUser ? 'user' : 'bot');
 
                 // Schedule message through Slack API
                 const response = await axios.post(
@@ -418,7 +481,7 @@ exports.handler = async (event, context) => {
                     {
                         channel: channelId,
                         text: message,
-                        post_at: scheduleTime,
+                        post_at: scheduledTime,
                         as_user: sendAsUser || false
                     },
                     {
@@ -448,7 +511,9 @@ exports.handler = async (event, context) => {
                         success: true,
                         scheduledMessageId: response.data.scheduled_message_id,
                         channel: response.data.channel,
-                        postAt: response.data.post_at
+                        postAt: response.data.post_at,
+                        scheduledTimeFormatted: new Date(scheduledTime * 1000).toUTCString(),
+                        sentAs: sendAsUser ? 'user' : 'bot'
                     })
                 };
             } catch (error) {
