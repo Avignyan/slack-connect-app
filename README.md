@@ -295,6 +295,8 @@ Avignyan - [GitHub](https://github.com/Avignyan)
 
 Project Link: [https://github.com/Avignyan/slack-connect-app](https://github.com/Avignyan/slack-connect-app)
 
+gmail: avignyan.sarangi@gmail.com
+
 ---
 Last updated: 2025-08-12 00:21:12 (UTC)  
 by Avignyan
