@@ -1,32 +1,28 @@
 /**
  * Message Scheduler Job
- *
- * This job runs on a schedule (every minute) to check for due scheduled messages in the database.
- * It sends each due message to Slack using the appropriate user or bot token, updates the message status,
- * and logs the result. Failed messages are marked as such for later review.
- *
- * Key Functions:
- * - sendDueMessages: Finds and sends all due messages, updating their status.
- * - startScheduler: Starts the cron job to run sendDueMessages every minute.
- *
- * Usage:
- * Call startScheduler() once when the backend server starts.
  */
-
 import cron from 'node-cron';
 import { WebClient } from '@slack/web-api';
-import { Installation } from '@slack/oauth';
+import type { ChatPostMessageArguments } from '@slack/web-api';
 import { findAndMarkDueMessages, updateMessageStatus } from '../repositories/messageRepository.js';
+
+interface InstallationData {
+    bot?: {
+        token?: string;
+    };
+    user?: {
+        token?: string;
+    };
+    authed_user?: {
+        access_token?: string;
+    };
+    access_token?: string;
+    bot_token?: string;
+    user_token?: string;
+}
 
 /**
  * Finds and sends all due scheduled messages.
- * For each message:
- *   - Determines whether to use the user or bot token.
- *   - Sends the message to the specified Slack channel.
- *   - Updates the message status to SENT or FAILED.
- *   - Logs the result for monitoring.
- *
- * This function is intended to be run by a scheduler (cron job).
  */
 const sendDueMessages = async () => {
     console.log('Scheduler: Checking for due messages...');
@@ -38,18 +34,31 @@ const sendDueMessages = async () => {
 
     for (const msg of dueMessages) {
         try {
-            const installationData = msg.installation.data as unknown as Installation;
-            let token;
+            // Type assertion to help TypeScript understand the structure
+            const installationData = msg.installation?.data as unknown as InstallationData;
 
-            // Get the appropriate token based on sendAsUser flag
+            if (!installationData) {
+                throw new Error(`Installation data not found for message ID ${msg.id}`);
+            }
+
+            let token: string | undefined;
+
             if (msg.sendAsUser) {
-                token = installationData.user?.token;
+                // Look for user token in all possible locations
+                token = installationData.authed_user?.access_token ||
+                    installationData.user?.token ||
+                    installationData.user_token;
+
                 if (!token) {
                     throw new Error(`User token not found for message ID ${msg.id} (Installation ID: ${msg.installationId})`);
                 }
-                console.log(`Scheduler: Sending message ID ${msg.id} as user ${installationData.user?.id}.`);
+                console.log(`Scheduler: Sending message ID ${msg.id} as user.`);
             } else {
-                token = installationData.bot?.token;
+                // Look for bot token in all possible locations
+                token = installationData.bot?.token ||
+                    installationData.access_token ||
+                    installationData.bot_token;
+
                 if (!token) {
                     throw new Error(`Bot token not found for message ID ${msg.id} (Installation ID: ${msg.installationId})`);
                 }
@@ -57,15 +66,35 @@ const sendDueMessages = async () => {
             }
 
             const client = new WebClient(token);
-            await client.chat.postMessage({
+
+            // Create properly typed message parameters
+            const messageParams: ChatPostMessageArguments = {
                 channel: msg.channelId,
-                text: msg.message,
+                text: msg.message
+            };
+
+            // Only add as_user for user messages
+            if (msg.sendAsUser) {
+                // Type assertion to allow adding as_user
+                (messageParams as ChatPostMessageArguments & { as_user: boolean }).as_user = true;
+            }
+
+            console.log(`Scheduler: Sending with params:`, {
+                channel: messageParams.channel,
+                as_user: msg.sendAsUser,
+                text_preview: messageParams.text?.substring(0, 20) + '...'
             });
+
+            const result = await client.chat.postMessage(messageParams);
+
+            if (!result.ok) {
+                throw new Error(`Slack API error: ${result.error || 'Unknown error'}`);
+            }
 
             await updateMessageStatus(msg.id, 'SENT');
             console.log(`Scheduler: Successfully sent message ID ${msg.id}`);
 
-        } catch (error) {
+        } catch (error: any) {
             console.error(`Scheduler: Failed to send message ID ${msg.id}:`, error);
             await updateMessageStatus(msg.id, 'FAILED');
         }
@@ -74,8 +103,6 @@ const sendDueMessages = async () => {
 
 /**
  * Starts the message scheduler cron job.
- * Runs sendDueMessages every minute.
- * Should be called once at server startup.
  */
 const startScheduler = () => {
     cron.schedule('* * * * *', sendDueMessages);
