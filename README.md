@@ -1,7 +1,8 @@
 # ConnectFlow: Slack Message Scheduler
 
-![ConnectFlow Logo](./logo.png)
-A modern React/TypeScript application that integrates with Slack to enable scheduling and management of messages across channels.
+
+
+## A modern React/TypeScript application that integrates with Slack to enable scheduling and management of messages across channels.
 
 ## Features
 
