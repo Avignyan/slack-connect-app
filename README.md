@@ -239,7 +239,7 @@ The application uses OAuth 2.0 for secure authorization with Slack:
 6. All subsequent API calls use this token
 
 
-[![OAuth Flow Diagram](diagram.svg)
+![OAuth Flow Diagram](diagram.svg)
 
 ### Token Management
 
