@@ -8,20 +8,9 @@ import crypto from 'crypto';
 
 /**
  * Retrieves the list of public Slack channels the authenticated user is a member of.
- *
- * Route: GET /api/channels
- *
- * Authentication: Requires a valid user session (req.user).
- *
- * Response:
- *   - 200: Array of channel objects the user is a member of.
- *   - 401: If user is not authenticated.
- *   - 400: If a valid token cannot be retrieved.
- *   - 500: On server or Slack API error.
  */
 export const getChannels = async (req: Request, res: Response) => {
     try {
-        // Get the authenticated user's info from the request
         const userId = req.user?.userId;
         const teamId = req.user?.teamId;
 
@@ -29,7 +18,6 @@ export const getChannels = async (req: Request, res: Response) => {
             return res.status(401).json({ error: 'User not authenticated properly.' });
         }
 
-        // Get a valid token for this specific user and team
         const token = await getValidAccessToken(teamId, userId);
         if (!token) return res.status(400).json({ error: 'Could not retrieve a valid token.' });
 
@@ -46,30 +34,18 @@ export const getChannels = async (req: Request, res: Response) => {
 
 /**
  * Sends a message to a specified Slack channel, either as the user or as the bot.
- *
- * Route: POST /api/send-message
- *
- * Request Body:
- *   - channelId: The ID of the Slack channel to send the message to.
- *   - message: The message text to send.
- *   - sendAsUser: (optional) Boolean, if true sends as the user, otherwise as the bot.
- *
- * Authentication: Requires a valid user session (req.user).
- *
- * Response:
- *   - 200: On successful message send.
- *   - 400: If required fields are missing or token cannot be retrieved.
- *   - 500: On server or Slack API error.
+ * FIXED: Added as_user parameter for user messages, improved error handling
  */
 export const sendMessage = async (req: Request, res: Response) => {
     const { channelId, message, sendAsUser } = req.body;
+
+    console.log('Sending message with params:', { channelId, message, sendAsUser: !!sendAsUser });
 
     if (!channelId || !message) {
         return res.status(400).json({ error: 'Channel ID and message are required.' });
     }
 
     try {
-        // Get the authenticated user's info from the request
         const userId = req.user?.userId;
         const teamId = req.user?.teamId;
 
@@ -77,7 +53,6 @@ export const sendMessage = async (req: Request, res: Response) => {
             return res.status(401).json({ error: 'User not authenticated properly.' });
         }
 
-        // Find the specific installation for this user
         const installation = await installationRepo.findInstallationByTeamIdAndUserId(teamId, userId);
         if (!installation) {
             return res.status(404).json({ error: 'Installation not found for user.' });
@@ -95,41 +70,63 @@ export const sendMessage = async (req: Request, res: Response) => {
         }
 
         const client = new WebClient(token);
-        await client.chat.postMessage({
+
+        // FIX: Add as_user parameter when sending as user
+        const messageParams: any = {
             channel: channelId,
             text: message,
-        });
+        };
+
+        // When sending as user, explicitly set as_user to true
+        if (sendAsUser) {
+            messageParams.as_user = true;
+        }
+
+        console.log('Sending with params:', messageParams);
+
+        const result = await client.chat.postMessage(messageParams);
+
+        // FIX: Better error handling with Slack API responses
+        if (!result.ok) {
+            console.error('Slack API error:', result.error);
+            return res.status(400).json({
+                error: 'Slack API error',
+                details: result.error
+            });
+        }
 
         res.status(200).json({ success: true, message: 'Message sent successfully.' });
 
-    } catch (error) {
-        console.error('Failed to send message:', error);
+    } catch (error: any) {
+        console.error('Failed to send message:', error.response?.data || error);
+
+        // FIX: Return more detailed error information
+        if (error.response?.data) {
+            return res.status(error.response.status || 500).json({
+                error: 'Failed to send message',
+                details: error.response.data
+            });
+        }
+
         res.status(500).json({ error: 'Failed to send message' });
     }
 };
 
 /**
  * Schedules a message to be sent at a future date/time for the authenticated user.
- *
- * Route: POST /api/schedule-message
- *
- * Request Body:
- *   - channelId: The ID of the Slack channel.
- *   - message: The message text.
- *   - sendAt: The date/time to send the message (ISO string).
- *   - sendAsUser: (optional) Boolean, if true sends as the user, otherwise as the bot.
- *
- * Authentication: Requires a valid user session (req.user).
- *
- * Response:
- *   - 200: On successful scheduling.
- *   - 401/404: If user or installation not found.
- *   - 500: On server error.
+ * FIXED: Proper timestamp conversion and error handling
  */
 export const scheduleMessage = async (req: Request, res: Response) => {
     const { channelId, message, sendAt, sendAsUser } = req.body;
+
+    console.log('Schedule request:', {
+        channelId,
+        message: message.substring(0, 20) + '...',
+        sendAt,
+        sendAsUser: !!sendAsUser
+    });
+
     try {
-        // Get the authenticated user's info
         const userId = req.user?.userId;
         const teamId = req.user?.teamId;
 
@@ -137,12 +134,65 @@ export const scheduleMessage = async (req: Request, res: Response) => {
             return res.status(401).json({ error: 'User not authenticated properly.' });
         }
 
-        // Find the specific installation for this user
         const installation = await installationRepo.findInstallationByTeamIdAndUserId(teamId, userId);
         if (!installation) {
             return res.status(404).json({ error: 'Installation not found for user.' });
         }
 
+        const installationData = installation.data as unknown as Installation;
+
+        // Get the appropriate token based on sendAsUser
+        let token;
+        if (sendAsUser) {
+            token = installationData.user?.token;
+            if (!token) return res.status(400).json({ error: 'User token not found.' });
+        } else {
+            token = installationData.bot?.token;
+            if (!token) return res.status(400).json({ error: 'Bot token not found.' });
+        }
+
+        // FIX: Convert date to Unix timestamp in seconds (not milliseconds)
+        const scheduledTime = Math.floor(new Date(sendAt).getTime() / 1000);
+
+        console.log('Scheduling for:', {
+            originalTime: sendAt,
+            convertedTime: new Date(scheduledTime * 1000).toISOString(),
+            unixTimestamp: scheduledTime
+        });
+
+        // Now we'll actually schedule with Slack API
+        const client = new WebClient(token);
+
+        const scheduleParams: any = {
+            channel: channelId,
+            text: message,
+            post_at: scheduledTime // This is the key part - proper timestamp format
+        };
+
+        // When scheduling as user, we need to use as_user flag
+        if (sendAsUser) {
+            scheduleParams.as_user = true;
+        }
+
+        console.log('Sending schedule params to Slack:', scheduleParams);
+
+        const result = await client.chat.scheduleMessage(scheduleParams);
+
+        if (!result.ok) {
+            console.error('Slack API scheduling error:', result.error);
+            return res.status(400).json({
+                error: 'Failed to schedule message with Slack',
+                details: result.error
+            });
+        }
+
+        console.log('Slack API schedule success:', {
+            scheduled_message_id: result.scheduled_message_id,
+            channel: result.channel,
+            post_at: result.post_at
+        });
+
+        // Store the scheduled message in our database (without Slack's ID since our schema doesn't have that field)
         await messageRepo.createScheduledMessage(
             channelId,
             message,
@@ -150,28 +200,32 @@ export const scheduleMessage = async (req: Request, res: Response) => {
             installation.id,
             sendAsUser
         );
-        res.status(200).json({ success: true, message: 'Message scheduled successfully.' });
-    } catch (error) {
-        console.error('Failed to schedule message:', error);
+
+        res.status(200).json({
+            success: true,
+            message: 'Message scheduled successfully.',
+            scheduled_time: new Date(scheduledTime * 1000).toISOString()
+        });
+    } catch (error: any) {
+        console.error('Failed to schedule message:', error.response?.data || error);
+
+        // FIX: Better error handling
+        if (error.response?.data) {
+            return res.status(error.response.status || 500).json({
+                error: 'Failed to schedule message',
+                details: error.response.data
+            });
+        }
+
         res.status(500).json({ error: 'Failed to schedule message' });
     }
 };
 
 /**
  * Retrieves all pending scheduled messages for the authenticated user.
- *
- * Route: GET /api/scheduled-messages
- *
- * Authentication: Requires a valid user session (req.user).
- *
- * Response:
- *   - 200: Array of scheduled message objects.
- *   - 401/404: If user or installation not found.
- *   - 500: On server error.
  */
 export const getScheduledMessages = async (req: Request, res: Response) => {
     try {
-        // Get the authenticated user's info
         const userId = req.user?.userId;
         const teamId = req.user?.teamId;
 
@@ -179,7 +233,6 @@ export const getScheduledMessages = async (req: Request, res: Response) => {
             return res.status(401).json({ error: 'User not authenticated properly.' });
         }
 
-        // Find the specific installation for this user
         const installation = await installationRepo.findInstallationByTeamIdAndUserId(teamId, userId);
         if (!installation) {
             return res.status(404).json({ error: 'No installation found for user.' });
@@ -195,20 +248,10 @@ export const getScheduledMessages = async (req: Request, res: Response) => {
 
 /**
  * Cancels a scheduled message by ID for the authenticated user.
- *
- * Route: DELETE /api/scheduled-messages/:id
- *
- * Authentication: Requires a valid user session (req.user).
- *
- * Response:
- *   - 200: On successful cancellation.
- *   - 401/403/404: If user not authorized or message not found.
- *   - 500: On server error.
  */
 export const cancelScheduledMessage = async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
-        // First verify that this message belongs to the authenticated user
         const userId = req.user?.userId;
         const teamId = req.user?.teamId;
 
@@ -221,7 +264,6 @@ export const cancelScheduledMessage = async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Installation not found for user.' });
         }
 
-        // Get the message and check if it belongs to this user's installation
         const message = await messageRepo.findScheduledMessageById(id);
         if (!message) {
             return res.status(404).json({ error: 'Message not found.' });
@@ -241,19 +283,9 @@ export const cancelScheduledMessage = async (req: Request, res: Response) => {
 
 /**
  * Logs out the authenticated user, deleting their session and installation.
- *
- * Route: POST /api/logout
- *
- * Authentication: Requires a valid user session (req.user).
- *
- * Response:
- *   - 200: On successful logout.
- *   - 401/404: If user or installation not found.
- *   - 500: On server error.
  */
 export const logout = async (req: Request, res: Response) => {
     try {
-        // Get the authenticated user's info
         const userId = req.user?.userId;
         const teamId = req.user?.teamId;
 
@@ -261,19 +293,14 @@ export const logout = async (req: Request, res: Response) => {
             return res.status(401).json({ error: 'User not authenticated properly.' });
         }
 
-        // Find the specific installation for this user
         const installation = await installationRepo.findInstallationByTeamIdAndUserId(teamId, userId);
         if (!installation) {
             return res.status(404).json({ error: 'No installation found for user.' });
         }
 
-        // 1. Delete all child records (scheduled messages) first
         await messageRepo.deleteMessagesByInstallationId(installation.id);
-
-        // 2. Delete the specific user's installation
         await installationRepo.deleteInstallationByTeamIdAndUserId(teamId, userId);
 
-        // 3. Delete the user's session
         if (req.headers.authorization) {
             const token = req.headers.authorization.split(' ')[1];
             await installationRepo.deleteSession(token);
@@ -288,17 +315,6 @@ export const logout = async (req: Request, res: Response) => {
 
 /**
  * Logs in a user by userId and teamId, creating a session token if installation exists.
- *
- * Route: POST /api/login
- *
- * Request Body:
- *   - userId: Slack user ID.
- *   - teamId: Slack team ID.
- *
- * Response:
- *   - 200: On successful login (returns token, userId, teamId, expiresAt).
- *   - 400/404: If required fields missing or installation not found.
- *   - 500: On server error.
  */
 export const login = async (req: Request, res: Response) => {
     try {
@@ -308,24 +324,18 @@ export const login = async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'User ID and Team ID are required.' });
         }
 
-        // Find the installation for this user and team
         const installation = await installationRepo.findInstallationByTeamIdAndUserId(teamId, userId);
 
         if (!installation) {
             return res.status(404).json({ error: 'Installation not found. Please connect your Slack workspace first.' });
         }
 
-        // Generate a session token
         const token = crypto.randomBytes(32).toString('hex');
-
-        // Set token expiration to 30 days from now
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + 30);
 
-        // Store the session
         await installationRepo.createUserSession(userId, teamId, token, expiresAt);
 
-        // Return the token to the client
         res.status(200).json({
             success: true,
             token,
